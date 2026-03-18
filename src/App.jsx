@@ -712,7 +712,7 @@ export default function NitzscheApp() {
               <p style={{ color: C.gray2, fontSize: 14, marginBottom: 28, lineHeight: 1.6 }}>
                 Digite seu e-mail para receber o código de acesso.
               </p>
-              <Input label="E-mail corporativo" type="email" placeholder="seu@empresa.com" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendOTP()} />
+              <Input label="Email" type="email" placeholder="seu melhor email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendOTP()} />
               {authError && <p style={{ color: C.danger, fontSize: 13, marginBottom: 12 }}>{authError}</p>}
               <Btn onClick={sendOTP} disabled={authLoading} style={{ width: "100%" }}>
                 {authLoading ? "Enviando..." : <><Icon.Mail /> Enviar código</>}
