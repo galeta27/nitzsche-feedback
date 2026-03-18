@@ -56,17 +56,26 @@ class SupabaseClient {
     return res.json();
   }
 
-  // Auth: Send Magic Link to email
-  async sendMagicLink(email) {
-    return this._fetch("/auth/v1/magiclink", {
+  // Auth: Send OTP code to email
+  async sendOTP(email) {
+    return this._fetch("/auth/v1/otp", {
       method: "POST",
       body: JSON.stringify({ email }),
     });
   }
 
-  // Auth: Exchange token from URL hash for session
+  // Auth: Verify OTP code
+  async verifyOTP(email, token) {
+    const data = await this._fetch("/auth/v1/verify", {
+      method: "POST",
+      body: JSON.stringify({ email, token, type: "email" }),
+    });
+    if (data.access_token) this._saveSession(data);
+    return data;
+  }
+
+  // Auth: Exchange token from URL hash for session (fallback for magic link)
   async handleRedirect() {
-    // Supabase redirects with #access_token=...&refresh_token=...&...
     const hash = window.location.hash;
     if (!hash || !hash.includes("access_token")) return false;
 
@@ -76,7 +85,6 @@ class SupabaseClient {
 
     if (!accessToken) return false;
 
-    // Get user info with the token
     try {
       const res = await fetch(`${this.url}/auth/v1/user`, {
         headers: {
@@ -94,7 +102,6 @@ class SupabaseClient {
         user,
       });
 
-      // Clean URL hash
       window.history.replaceState(null, "", window.location.pathname);
       return true;
     } catch {
@@ -435,6 +442,7 @@ export default function NitzscheApp() {
   // Auth
   const [authState, setAuthState] = useState("loading");
   const [authEmail, setAuthEmail] = useState("");
+  const [authCode, setAuthCode] = useState("");
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [authSent, setAuthSent] = useState(false);
@@ -507,15 +515,28 @@ export default function NitzscheApp() {
   }, [activeConvId]);
 
   // ---- AUTH ----
-  const sendMagicLink = async () => {
+  const handleSendOTP = async () => {
     if (!authEmail.trim()) { setAuthError("Digite seu e-mail"); return; }
     setAuthLoading(true);
     setAuthError("");
     try {
-      await supabase.sendMagicLink(authEmail.trim());
+      await supabase.sendOTP(authEmail.trim());
       setAuthSent(true);
     } catch (err) {
       setAuthError(err.message);
+    }
+    setAuthLoading(false);
+  };
+
+  const handleVerifyOTP = async () => {
+    if (!authCode.trim()) { setAuthError("Digite o código"); return; }
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      await supabase.verifyOTP(authEmail.trim(), authCode.trim());
+      setAuthState("authenticated");
+    } catch (err) {
+      setAuthError("Código inválido. Verifique e tente novamente.");
     }
     setAuthLoading(false);
   };
@@ -756,38 +777,30 @@ export default function NitzscheApp() {
           {!authSent ? (
             <>
               <p style={{ color: C.gray2, fontSize: 14, marginBottom: 28, lineHeight: 1.6 }}>
-                Digite seu e-mail para receber o link de acesso.
+                Digite seu e-mail para receber o código de acesso.
               </p>
-              <Input label="E-mail corporativo" type="email" placeholder="seu@empresa.com" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendMagicLink()} />
+              <Input label="E-mail corporativo" type="email" placeholder="seu@empresa.com" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSendOTP()} />
               {authError && <p style={{ color: C.danger, fontSize: 13, marginBottom: 12 }}>{authError}</p>}
-              <Btn onClick={sendMagicLink} disabled={authLoading} style={{ width: "100%" }}>
-                {authLoading ? "Enviando..." : <><Icon.Mail /> Enviar link de acesso</>}
+              <Btn onClick={handleSendOTP} disabled={authLoading} style={{ width: "100%" }}>
+                {authLoading ? "Enviando..." : <><Icon.Mail /> Enviar código</>}
               </Btn>
             </>
           ) : (
             <>
-              <div style={{ textAlign: "center", padding: "12px 0" }}>
-                <div style={{ width: 56, height: 56, borderRadius: "50%", background: `linear-gradient(135deg, ${C.green}, ${C.greenBright})`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
-                  <Icon.Mail />
-                </div>
-                <p style={{ color: C.white, fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
-                  Verifique seu e-mail
-                </p>
-                <p style={{ color: C.gray2, fontSize: 14, lineHeight: 1.6, marginBottom: 8 }}>
-                  Enviamos um link de acesso para:
-                </p>
-                <p style={{ color: C.greenBright, fontSize: 15, fontWeight: 600, marginBottom: 24 }}>
-                  {authEmail}
-                </p>
-                <p style={{ color: C.gray3, fontSize: 13, lineHeight: 1.6, marginBottom: 24 }}>
-                  Clique no link no e-mail para entrar automaticamente. O link expira em 1 hora.
-                </p>
-              </div>
-              <Btn variant="ghost" onClick={() => { setAuthSent(false); setAuthError(""); }} style={{ width: "100%", border: `1px solid ${C.border}`, color: C.gray2, marginBottom: 10 }}>
+              <p style={{ color: C.gray2, fontSize: 14, marginBottom: 8, lineHeight: 1.6 }}>
+                Enviamos um código de 6 dígitos para:
+              </p>
+              <p style={{ color: C.greenBright, fontSize: 15, fontWeight: 600, marginBottom: 24 }}>{authEmail}</p>
+              <Input label="Código de verificação" type="text" placeholder="000000" value={authCode} onChange={(e) => setAuthCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleVerifyOTP()} style={{ textAlign: "center", fontSize: 24, letterSpacing: "0.3em", fontWeight: 700 }} />
+              {authError && <p style={{ color: C.danger, fontSize: 13, marginBottom: 12 }}>{authError}</p>}
+              <Btn onClick={handleVerifyOTP} disabled={authLoading} style={{ width: "100%", marginBottom: 12 }}>
+                {authLoading ? "Verificando..." : <><Icon.Lock /> Entrar</>}
+              </Btn>
+              <Btn variant="ghost" onClick={() => { setAuthSent(false); setAuthCode(""); setAuthError(""); }} style={{ width: "100%", border: `1px solid ${C.border}`, color: C.gray2, marginBottom: 10 }}>
                 Usar outro e-mail
               </Btn>
-              <button onClick={sendMagicLink} style={{ background: "none", border: "none", color: C.green, fontSize: 13, cursor: "pointer", width: "100%", textAlign: "center" }}>
-                Reenviar link
+              <button onClick={handleSendOTP} style={{ background: "none", border: "none", color: C.green, fontSize: 13, cursor: "pointer", width: "100%", textAlign: "center" }}>
+                Reenviar código
               </button>
             </>
           )}
