@@ -65,21 +65,16 @@ const callAI = async (messages, systemPrompt) => {
 
 const DEFAULT_PROMPT = `Você é um coach especialista em comunicação e feedback corporativo da Nitzsche Consultoria. Seu papel é treinar o usuário a dar e receber feedback de forma eficaz, empática e assertiva.
 
-PERFIL DO USUÁRIO (quem vai dar o feedback):
-- Nome: {{user_name}}
-- Idade: {{user_age}} anos
-- Cargo: {{user_role}}
-- Perfil de personalidade: {{user_personality}}
+FLUXO DA CONVERSA:
+Ao iniciar, cumprimente o usuário e colete as seguintes informações de forma natural e conversacional (uma ou duas perguntas por vez, não tudo de uma vez):
 
-PERFIL DO RECEPTOR (quem vai receber o feedback):
-- Idade: {{target_age}} anos
-- Cargo: {{target_role}}
-- Perfil de personalidade: {{target_personality}}
+1. SOBRE O USUÁRIO: nome, idade, cargo e perfil de personalidade (DISC, MBTI ou como se descreve)
+2. SOBRE O RECEPTOR DO FEEDBACK: idade, cargo e perfil de personalidade. Se o usuário não souber o perfil, faça perguntas para ajudá-lo a identificar (como a pessoa reage a pressão, como se comunica, como lida com conflitos, etc.)
+3. CONTEXTO: o que aconteceu, quando, quem estava envolvido, qual foi o impacto
 
-CONTEXTO DA SITUAÇÃO:
-{{situation_context}}
+Após coletar as informações, faça um breve resumo do que entendeu e peça confirmação antes de iniciar o treinamento.
 
-INSTRUÇÕES:
+DURANTE O TREINAMENTO:
 1. Considere os aspectos geracionais de ambas as partes para adaptar a linguagem e abordagem.
 2. Considere os perfis de personalidade para sugerir a melhor forma de comunicação.
 3. Use técnicas como: SBI (Situação-Comportamento-Impacto), comunicação não-violenta, escuta ativa.
@@ -91,7 +86,7 @@ INSTRUÇÕES:
 9. Responda sempre em português brasileiro.
 10. Seja conciso e prático.`;
 
-const buildPrompt = (tpl, u, t, ctx) => tpl.replace("{{user_name}}",u.name||"").replace("{{user_age}}",u.age||"").replace("{{user_role}}",u.role||"").replace("{{user_personality}}",u.personality||"").replace("{{target_age}}",t.age||"").replace("{{target_role}}",t.role||"").replace("{{target_personality}}",t.personality||"").replace("{{situation_context}}",ctx||"");
+const buildPrompt = (tpl) => tpl;
 
 const ACTION_PLAN_PROMPT = `Com base na conversa de treinamento de feedback acima, gere um plano de ação estruturado em JSON com o seguinte formato exato (sem markdown, sem backticks, apenas JSON puro):
 {"titulo":"Título do plano","resumo":"Resumo de 2-3 frases","itens":[{"acao":"Descrição da ação","prazo":"Prazo sugerido","como":"Como executar","indicador":"Como saber se deu certo"}],"dicas_finais":"Dicas gerais"}
@@ -132,14 +127,6 @@ export default function NitzscheApp() {
   const [conversations, setConversations] = useState([]);
   const [activeConvId, setActiveConvId] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [onboardStep, setOnboardStep] = useState(0);
-  const [userProfile, setUserProfile] = useState({name:"",age:"",role:"",personality:""});
-  const [targetProfile, setTargetProfile] = useState({age:"",role:"",personality:"",knowsProfile:null});
-  const [situationContext, setSituationContext] = useState("");
-  const [discoveryMsgs, setDiscoveryMsgs] = useState([]);
-  const [discoveryInput, setDiscoveryInput] = useState("");
-  const [discoveryLoading, setDiscoveryLoading] = useState(false);
-  const [discoveryDone, setDiscoveryDone] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [sessionTokens, setSessionTokens] = useState({input:0,output:0,cached:0,cost:0});
@@ -154,10 +141,8 @@ export default function NitzscheApp() {
   const [actionPlanLoading, setActionPlanLoading] = useState(false);
   const [actionChecks, setActionChecks] = useState({});
   const chatEndRef = useRef(null);
-  const discoveryEndRef = useRef(null);
 
   useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:"smooth"})},[messages,isLoading]);
-  useEffect(()=>{discoveryEndRef.current?.scrollIntoView({behavior:"smooth"})},[discoveryMsgs]);
   useEffect(()=>{if(authState==="authenticated")loadProfile()},[authState]);
   useEffect(()=>{if(profile)loadConversations()},[profile]);
   useEffect(()=>{if(activeConvId)loadMessages(activeConvId);else setMessages([])},[activeConvId]);
@@ -178,32 +163,21 @@ export default function NitzscheApp() {
   const saveConversation=async(d)=>{try{const r=await supabase.from("conversations").insert(d).execute();return r[0]}catch(e){console.error(e);return null}};
   const saveMessage=async(d)=>{try{await supabase.from("messages").insert(d).execute()}catch(e){console.error(e)}};
 
-  const startNew=()=>{setOnboardStep(1);setUserProfile({name:profile?.full_name||"",age:profile?.age||"",role:profile?.role||"",personality:profile?.personality||""});setTargetProfile({age:"",role:"",personality:"",knowsProfile:null});setSituationContext("");setActiveConvId(null);setMessages([]);setDiscoveryMsgs([]);setDiscoveryDone(false);setSessionTokens({input:0,output:0,cached:0,cost:0});setActionPlan(null);setActionChecks({})};
-  const resumeConv=(conv)=>{setActiveConvId(conv.id);setOnboardStep(0);setActionPlan(null);setActionChecks({})};
+  const startNew=async()=>{
+    const conv=await saveConversation({user_id:profile.id,title:`Treinamento ${new Date().toLocaleDateString("pt-BR")}`,user_profile:{},target_profile:{},situation_context:""});
+    if(conv){setConversations(p=>[conv,...p]);setActiveConvId(conv.id);setMessages([]);setSessionTokens({input:0,output:0,cached:0,cost:0});setActionPlan(null);setActionChecks({});sendInitial(conv)}
+  };
+  const resumeConv=(conv)=>{setActiveConvId(conv.id);setActionPlan(null);setActionChecks({})};
 
-  const totalSteps=5;
-  const canAdvance=()=>{switch(onboardStep){case 1:return userProfile.name&&userProfile.age&&userProfile.role&&userProfile.personality;case 2:return targetProfile.knowsProfile!==null;case 3:return targetProfile.knowsProfile?(targetProfile.age&&targetProfile.role&&targetProfile.personality):(discoveryDone&&targetProfile.personality);case 4:return situationContext.trim().length>20;case 5:return true;default:return false}};
-
-  const handleAdvance=async()=>{
-    if(onboardStep===5){
-      const conv=await saveConversation({user_id:profile.id,title:`Feedback → ${targetProfile.role||"Colaborador"}`,user_profile:userProfile,target_profile:targetProfile,situation_context:situationContext});
-      if(conv){setConversations(p=>[conv,...p]);setActiveConvId(conv.id);setOnboardStep(0);
-        try{await supabase.from("profiles").eq("id",profile.id).update({full_name:userProfile.name,age:parseInt(userProfile.age),role:userProfile.role,personality:userProfile.personality}).execute()}catch{}
-        sendInitial(conv)}
-    }else setOnboardStep(s=>s+1)};
-
-  const getSysPrompt=(conv)=>buildPrompt(promptText,conv.user_profile,conv.target_profile,conv.situation_context);
+  const getSysPrompt=()=>buildPrompt(promptText);
   const updateTokens=(r)=>{const m=MODELS.find(x=>x.id===getModel())||MODELS[0];setSessionTokens(p=>({input:p.input+r.inputTokens,output:p.output+r.outputTokens,cached:p.cached+r.cacheReadTokens,cost:p.cost+(r.inputTokens*m.inputPrice+r.outputTokens*m.outputPrice)/1000000}))};
 
-  const sendInitial=async(conv)=>{setIsLoading(true);try{const r=await callAI([{role:"user",content:"Olá! Estou pronto para iniciar o treinamento de feedback. Me oriente sobre a melhor abordagem considerando os perfis e contexto informados."}],getSysPrompt(conv));const m={conversation_id:conv.id,role:"assistant",content:r.text,input_tokens:r.inputTokens,output_tokens:r.outputTokens,cache_read_tokens:r.cacheReadTokens};await saveMessage(m);setMessages([{...m,created_at:new Date().toISOString()}]);updateTokens(r)}catch(e){setMessages([{role:"assistant",content:`Erro: ${e.message}`,created_at:new Date().toISOString()}])}setIsLoading(false)};
+  const sendInitial=async(conv)=>{setIsLoading(true);try{const r=await callAI([{role:"user",content:"Olá! Quero treinar como dar feedback."}],getSysPrompt());const m={conversation_id:conv.id,role:"assistant",content:r.text,input_tokens:r.inputTokens,output_tokens:r.outputTokens,cache_read_tokens:r.cacheReadTokens};await saveMessage(m);setMessages([{...m,created_at:new Date().toISOString()}]);updateTokens(r)}catch(e){setMessages([{role:"assistant",content:`Erro: ${e.message}`,created_at:new Date().toISOString()}])}setIsLoading(false)};
 
-  const sendMessage=async()=>{if(!chatInput.trim()||isLoading||!activeConvId)return;const text=chatInput.trim();setChatInput("");const um={conversation_id:activeConvId,role:"user",content:text,input_tokens:0,output_tokens:0};await saveMessage(um);const nm=[...messages,{...um,created_at:new Date().toISOString()}];setMessages(nm);setIsLoading(true);try{const conv=conversations.find(c=>c.id===activeConvId);const r=await callAI(nm.map(m=>({role:m.role,content:m.content})),getSysPrompt(conv));const am={conversation_id:activeConvId,role:"assistant",content:r.text,input_tokens:r.inputTokens,output_tokens:r.outputTokens,cache_read_tokens:r.cacheReadTokens};await saveMessage(am);setMessages(p=>[...p,{...am,created_at:new Date().toISOString()}]);updateTokens(r)}catch(e){setMessages(p=>[...p,{role:"assistant",content:`Erro: ${e.message}`,created_at:new Date().toISOString()}])}setIsLoading(false)};
+  const sendMessage=async()=>{if(!chatInput.trim()||isLoading||!activeConvId)return;const text=chatInput.trim();setChatInput("");const um={conversation_id:activeConvId,role:"user",content:text,input_tokens:0,output_tokens:0};await saveMessage(um);const nm=[...messages,{...um,created_at:new Date().toISOString()}];setMessages(nm);setIsLoading(true);try{const r=await callAI(nm.map(m=>({role:m.role,content:m.content})),getSysPrompt());const am={conversation_id:activeConvId,role:"assistant",content:r.text,input_tokens:r.inputTokens,output_tokens:r.outputTokens,cache_read_tokens:r.cacheReadTokens};await saveMessage(am);setMessages(p=>[...p,{...am,created_at:new Date().toISOString()}]);updateTokens(r)}catch(e){setMessages(p=>[...p,{role:"assistant",content:`Erro: ${e.message}`,created_at:new Date().toISOString()}])}setIsLoading(false)};
 
-  const generateActionPlan=async()=>{if(!activeConvId||messages.length<2)return;setActionPlanLoading(true);try{const conv=conversations.find(c=>c.id===activeConvId);const hist=messages.map(m=>({role:m.role,content:m.content}));hist.push({role:"user",content:ACTION_PLAN_PROMPT});const r=await callAI(hist,getSysPrompt(conv));const parsed=JSON.parse(r.text.replace(/```json?|```/g,"").trim());setActionPlan(parsed);setActionChecks({});setShowActionPlan(true);updateTokens(r)}catch(e){alert("Erro ao gerar plano: "+e.message)}setActionPlanLoading(false)};
+  const generateActionPlan=async()=>{if(!activeConvId||messages.length<2)return;setActionPlanLoading(true);try{const hist=messages.map(m=>({role:m.role,content:m.content}));hist.push({role:"user",content:ACTION_PLAN_PROMPT});const r=await callAI(hist,getSysPrompt());const parsed=JSON.parse(r.text.replace(/```json?|```/g,"").trim());setActionPlan(parsed);setActionChecks({});setShowActionPlan(true);updateTokens(r)}catch(e){alert("Erro ao gerar plano: "+e.message)}setActionPlanLoading(false)};
   const toggleCheck=(i)=>setActionChecks(p=>({...p,[i]:!p[i]}));
-
-  const startDiscovery=async()=>{setDiscoveryLoading(true);try{const r=await callAI([{role:"user",content:"Preciso de ajuda para identificar o perfil da pessoa para quem vou dar feedback."}],`Você ajuda a identificar perfis de personalidade no trabalho. Faça até 5 perguntas, uma por vez. Ao final, escreva "PERFIL IDENTIFICADO:" seguido do resumo. Em português.`);setDiscoveryMsgs([{role:"assistant",content:r.text}])}catch(e){setDiscoveryMsgs([{role:"assistant",content:`Erro: ${e.message}`}])}setDiscoveryLoading(false)};
-  const sendDiscovery=async()=>{if(!discoveryInput.trim()||discoveryLoading)return;const up=[...discoveryMsgs,{role:"user",content:discoveryInput.trim()}];setDiscoveryMsgs(up);setDiscoveryInput("");setDiscoveryLoading(true);try{const r=await callAI(up,`Você ajuda a identificar perfis de personalidade no trabalho. Faça até 5 perguntas, uma por vez. Ao final, escreva "PERFIL IDENTIFICADO:" seguido do resumo. Em português.`);setDiscoveryMsgs([...up,{role:"assistant",content:r.text}]);if(r.text.includes("PERFIL IDENTIFICADO:")){setTargetProfile(p=>({...p,personality:r.text.split("PERFIL IDENTIFICADO:")[1].trim()}));setDiscoveryDone(true)}}catch(e){setDiscoveryMsgs([...up,{role:"assistant",content:`Erro: ${e.message}`}])}setDiscoveryLoading(false)};
 
   const savePrompt=()=>{localStorage.setItem("nitzsche_prompt",promptText);setPromptSaved(true);setTimeout(()=>setPromptSaved(false),2000)};
   const resetPrompt=()=>{setPromptText(DEFAULT_PROMPT);localStorage.removeItem("nitzsche_prompt")};
@@ -230,21 +204,6 @@ export default function NitzscheApp() {
 
   const planModal=showActionPlan&&actionPlan&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={()=>setShowActionPlan(false)}><div style={{background:C.bgCard,borderRadius:20,padding:32,width:"100%",maxWidth:640,maxHeight:"85vh",overflow:"auto",border:`1px solid ${C.border}`,boxShadow:C.shadow}} onClick={e=>e.stopPropagation()}><h3 style={{fontFamily:FONT_DISPLAY,fontSize:20,marginBottom:4}}>{actionPlan.titulo}</h3><p style={{fontSize:14,color:C.gray2,marginBottom:20,lineHeight:1.6}}>{actionPlan.resumo}</p>{actionPlan.itens?.map((item,i)=><div key={i} style={{background:C.bgInput,borderRadius:12,padding:"14px 16px",marginBottom:10,border:`1px solid ${actionChecks[i]?C.green:C.border}`,transition:"all 0.2s"}}><div style={{display:"flex",alignItems:"flex-start",gap:10}}><button onClick={()=>toggleCheck(i)} style={{width:22,height:22,borderRadius:6,border:`2px solid ${actionChecks[i]?C.green:C.gray4}`,background:actionChecks[i]?C.green:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2,transition:"all 0.2s"}}>{actionChecks[i]&&<Icon.Check/>}</button><div style={{flex:1}}><div style={{fontSize:15,fontWeight:600,color:actionChecks[i]?C.gray3:C.white,textDecoration:actionChecks[i]?"line-through":"none",marginBottom:4}}>{item.acao}</div><div style={{fontSize:13,color:C.gray3}}><strong style={{color:C.gray2}}>Prazo:</strong> {item.prazo}</div><div style={{fontSize:13,color:C.gray3}}><strong style={{color:C.gray2}}>Como:</strong> {item.como}</div><div style={{fontSize:13,color:C.gray3}}><strong style={{color:C.gray2}}>Indicador:</strong> {item.indicador}</div></div></div></div>)}{actionPlan.dicas_finais&&<div style={{background:C.bgInput,borderRadius:12,padding:"14px 16px",marginTop:12,borderLeft:`3px solid ${C.green}`}}><div style={{fontSize:12,fontWeight:600,color:C.green,textTransform:"uppercase",marginBottom:6}}>Dicas finais</div><div style={{fontSize:14,color:C.gray1,lineHeight:1.6}}>{actionPlan.dicas_finais}</div></div>}<Btn onClick={()=>setShowActionPlan(false)} style={{width:"100%",marginTop:20}}>Fechar</Btn></div></div>;
 
-  // ONBOARDING
-  const renderOnboarding=()=>{const titles=["","Seu Perfil","Receptor do Feedback","Perfil do Receptor","Contexto da Situação","Confirmar Dados"];return(
-    <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:24,overflowY:"auto"}}><div style={{background:C.bgCard,borderRadius:20,padding:"36px 32px",width:"100%",maxWidth:540,border:`1px solid ${C.border}`,boxShadow:C.shadow}} className="fade-in">
-      <div style={{display:"flex",gap:6,marginBottom:24}}>{[1,2,3,4,5].map(s=><div key={s} style={{height:4,flex:1,borderRadius:4,background:s<=onboardStep?C.green:C.border,transition:"all 0.3s"}}/>)}</div>
-      <h2 style={{fontFamily:FONT_DISPLAY,fontSize:22,marginBottom:4}}>{titles[onboardStep]}</h2>
-      <p style={{fontSize:13,color:C.gray3,marginBottom:22}}>Etapa {onboardStep} de {totalSteps}</p>
-      {onboardStep===1&&<div><Input label="Nome" placeholder="Seu nome completo" value={userProfile.name} onChange={e=>setUserProfile(p=>({...p,name:e.target.value}))}/><Input label="Idade" type="number" placeholder="Ex: 35" value={userProfile.age} onChange={e=>setUserProfile(p=>({...p,age:e.target.value}))}/><Input label="Cargo" placeholder="Ex: Gerente de Vendas" value={userProfile.role} onChange={e=>setUserProfile(p=>({...p,role:e.target.value}))}/><TextArea label="Perfil de personalidade" placeholder="DISC, MBTI, ou descreva..." value={userProfile.personality} onChange={e=>setUserProfile(p=>({...p,personality:e.target.value}))}/></div>}
-      {onboardStep===2&&<div><p style={{color:C.gray1,fontSize:15,marginBottom:20,lineHeight:1.6}}>Você conhece o perfil de personalidade do receptor?</p><div style={{display:"flex",gap:12}}><Btn style={{flex:1}} variant={targetProfile.knowsProfile===true?"primary":"ghost"} onClick={()=>setTargetProfile(p=>({...p,knowsProfile:true}))}>Sim, conheço</Btn><Btn style={{flex:1}} variant={targetProfile.knowsProfile===false?"primary":"ghost"} onClick={()=>{setTargetProfile(p=>({...p,knowsProfile:false}));if(!discoveryMsgs.length)startDiscovery()}}>Não, preciso de ajuda</Btn></div></div>}
-      {onboardStep===3&&targetProfile.knowsProfile&&<div><Input label="Idade do receptor" type="number" placeholder="Ex: 28" value={targetProfile.age} onChange={e=>setTargetProfile(p=>({...p,age:e.target.value}))}/><Input label="Cargo" placeholder="Ex: Consultor de Vendas" value={targetProfile.role} onChange={e=>setTargetProfile(p=>({...p,role:e.target.value}))}/><TextArea label="Perfil de personalidade" placeholder="Descreva..." value={targetProfile.personality} onChange={e=>setTargetProfile(p=>({...p,personality:e.target.value}))}/></div>}
-      {onboardStep===3&&targetProfile.knowsProfile===false&&<div><div style={{background:C.bgInput,borderRadius:12,border:`1px solid ${C.border}`,maxHeight:280,overflowY:"auto",marginBottom:14,padding:14}}>{discoveryMsgs.map((m,i)=><div key={i} style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:m.role==="assistant"?C.green:C.gray3,textTransform:"uppercase",marginBottom:3}}>{m.role==="assistant"?"Assistente":"Você"}</div><div style={{fontSize:14,color:C.gray1,lineHeight:1.6}}>{m.content}</div></div>)}{discoveryLoading&&<Typing/>}<div ref={discoveryEndRef}/></div>{!discoveryDone?<div style={{display:"flex",gap:8}}><input value={discoveryInput} onChange={e=>setDiscoveryInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendDiscovery()} placeholder="Sua resposta..." style={{flex:1,padding:"10px 14px",borderRadius:10,border:`1px solid ${C.border}`,background:C.bgInput,color:C.white,fontSize:14,fontFamily:FONT,outline:"none"}}/><Btn small onClick={sendDiscovery} disabled={discoveryLoading}>Enviar</Btn></div>:<><div style={{background:C.bgInput,borderRadius:10,padding:"12px 16px",marginBottom:14,border:`1px solid ${C.green}`}}><div style={{fontSize:11,fontWeight:600,color:C.green,textTransform:"uppercase",marginBottom:6}}>Perfil Identificado</div><div style={{fontSize:14,color:C.gray1,lineHeight:1.5}}>{targetProfile.personality}</div></div><Input label="Idade do receptor" type="number" placeholder="Ex: 28" value={targetProfile.age} onChange={e=>setTargetProfile(p=>({...p,age:e.target.value}))}/><Input label="Cargo" placeholder="Ex: Consultor" value={targetProfile.role} onChange={e=>setTargetProfile(p=>({...p,role:e.target.value}))}/></>}</div>}
-      {onboardStep===4&&<div><p style={{color:C.gray1,fontSize:14,marginBottom:14,lineHeight:1.6}}>Descreva a situação: o que aconteceu, quando, o impacto e resultado esperado.</p><TextArea placeholder="Ex: Na última semana..." value={situationContext} onChange={e=>setSituationContext(e.target.value)} style={{minHeight:140}}/><p style={{fontSize:12,color:C.gray4}}>Mínimo 20 caracteres</p></div>}
-      {onboardStep===5&&<div>{[{l:"Seu Perfil",t:`${userProfile.name}, ${userProfile.age} anos — ${userProfile.role}\n${userProfile.personality}`},{l:"Receptor",t:`${targetProfile.age} anos — ${targetProfile.role}\n${targetProfile.personality}`},{l:"Contexto",t:situationContext}].map((s,i)=><div key={i} style={{background:C.bgInput,borderRadius:10,padding:"14px 16px",marginBottom:12,border:`1px solid ${C.border}`}}><div style={{fontSize:11,fontWeight:600,color:C.green,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>{s.l}</div><div style={{fontSize:14,color:C.gray1,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{s.t}</div></div>)}</div>}
-      <div style={{display:"flex",gap:10,marginTop:24}}>{onboardStep>1&&<Btn variant="ghost" onClick={()=>setOnboardStep(s=>s-1)} style={{border:`1px solid ${C.border}`}}>Voltar</Btn>}<Btn onClick={canAdvance()?handleAdvance:undefined} disabled={!canAdvance()} style={{flex:1}}>{onboardStep===5?"Iniciar Treinamento":"Continuar"} <Icon.Arrow/></Btn></div>
-    </div></div>)};
-
   // CHAT
   const renderChat=()=>{if(!activeConvId)return<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:40}}><div style={{textAlign:"center",maxWidth:380}} className="fade-in"><Logo size={56}/><h2 style={{fontFamily:FONT_DISPLAY,fontSize:24,marginTop:18,marginBottom:8}}>Feedback Training</h2><p style={{color:C.gray3,fontSize:15,lineHeight:1.6,marginBottom:24}}>Treine suas habilidades de feedback com IA.</p><Btn onClick={startNew} style={{margin:"0 auto"}}><Icon.Plus/> Novo Treinamento</Btn>{!getKey()&&<p style={{color:C.danger,fontSize:13,marginTop:16}}>Configure sua API Key da OpenAI em ⚙️</p>}</div></div>;
     return<><div style={{flex:1,overflowY:"auto",padding:"20px 24px"}}><div style={{maxWidth:700,margin:"0 auto"}}>{messages.map((msg,i)=><div key={i} style={{display:"flex",gap:10,marginBottom:18,alignItems:"flex-start"}} className="fade-in"><div style={{width:30,height:30,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0,background:msg.role==="assistant"?`linear-gradient(135deg,${C.green},${C.greenBright})`:C.bgInput,border:msg.role==="user"?`1px solid ${C.border}`:"none",color:C.white}}>{msg.role==="assistant"?"N":(profile?.full_name?.[0]?.toUpperCase()||"U")}</div><div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",color:msg.role==="assistant"?C.green:C.gray3,marginBottom:3}}>{msg.role==="assistant"?"Nitzsche Coach":"Você"}</div><div style={{fontSize:15,lineHeight:1.65,color:C.gray1,whiteSpace:"pre-wrap"}}>{msg.content}</div></div></div>)}{isLoading&&<div style={{display:"flex",gap:10,marginBottom:18}}><div style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:C.white}}>N</div><div><div style={{fontSize:11,fontWeight:600,color:C.green,marginBottom:3,textTransform:"uppercase"}}>Nitzsche Coach</div><Typing/></div></div>}<div ref={chatEndRef}/></div></div>
@@ -266,8 +225,8 @@ export default function NitzscheApp() {
       </div>
     </div>
     <div style={{flex:1,display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden"}}>
-      <div style={{padding:"12px 22px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",background:C.bgSurface}}><span style={{fontSize:14,fontWeight:500,color:C.gray1}}>{onboardStep>0?"Novo Treinamento":activeConv?activeConv.title:"Feedback Training"}</span>{activeConv&&<span style={{fontSize:11,color:C.gray4}}>{messages.length} msgs</span>}</div>
-      {onboardStep>0?renderOnboarding():renderChat()}
+      <div style={{padding:"12px 22px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",background:C.bgSurface}}><span style={{fontSize:14,fontWeight:500,color:C.gray1}}>{activeConv?activeConv.title:"Feedback Training"}</span>{activeConv&&<span style={{fontSize:11,color:C.gray4}}>{messages.length} msgs</span>}</div>
+      {renderChat()}
     </div>
   </div>);
 }
