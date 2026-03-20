@@ -87,6 +87,7 @@ const Icon = {
   Clipboard:()=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>,
   Arrow:()=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>,
   Tokens:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v12M6 12h12"/></svg>,
+  User:()=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
 };
 const Logo=({size=36})=><svg width={size} height={size} viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="16" fill={C.bg} stroke={C.border} strokeWidth="2"/><path d="M25 75V25h10l25 35V25h10v50H60L35 40v35z" fill={C.white}/><path d="M50 45l15 20V45h10v30H65L50 55z" fill={C.green} opacity="0.9"/></svg>;
 const Typing=()=>{const[f,setF]=useState(0);useEffect(()=>{const t=setInterval(()=>setF(v=>(v+1)%3),400);return()=>clearInterval(t)},[]);return<div style={{display:"flex",gap:5,padding:"6px 0"}}>{[0,1,2].map(i=><div key={i} style={{width:7,height:7,borderRadius:"50%",background:C.gray3,opacity:i===f?1:0.3,transform:`scale(${i===f?1.2:1})`,transition:"all 0.25s"}}/>)}</div>};
@@ -122,11 +123,14 @@ export default function NitzscheApp() {
   const [actionPlan, setActionPlan] = useState(null);
   const [actionPlanLoading, setActionPlanLoading] = useState(false);
   const [actionChecks, setActionChecks] = useState({});
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileForm, setProfileForm] = useState({full_name:"",age:"",role:"",personality:""});
+  const [profileSaved, setProfileSaved] = useState(false);
   const chatEndRef = useRef(null);
 
   useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:"smooth"})},[messages,isLoading]);
   useEffect(()=>{if(authState==="authenticated")loadProfile()},[authState]);
-  useEffect(()=>{if(profile)loadConversations()},[profile]);
+  useEffect(()=>{if(profile){loadConversations();setProfileForm({full_name:profile.full_name||"",age:profile.age||"",role:profile.role||"",personality:profile.personality||""})}},[profile]);
   useEffect(()=>{if(activeConvId)loadMessages(activeConvId);else setMessages([])},[activeConvId]);
   useEffect(()=>{const s=localStorage.getItem("nitzsche_prompt");if(s)setPromptText(s)},[]);
 
@@ -151,7 +155,31 @@ export default function NitzscheApp() {
   };
   const resumeConv=(conv)=>{setActiveConvId(conv.id);setActionPlan(null);setActionChecks({})};
 
-  const getSysPrompt=()=>buildPrompt(promptText);
+  const getSysPrompt=()=>{
+    let prompt = buildPrompt(promptText);
+    if(profile?.full_name || profile?.age || profile?.role || profile?.personality){
+      prompt += `\n\nPERFIL DO USUÁRIO (já coletado anteriormente, não pergunte novamente):
+- Nome: ${profile.full_name||"não informado"}
+- Idade: ${profile.age||"não informada"}
+- Cargo: ${profile.role||"não informado"}
+- Perfil de personalidade: ${profile.personality||"não informado"}
+Use essas informações para personalizar a experiência. Se algum campo estiver como "não informado", você pode perguntar naturalmente durante a conversa.`;
+    }
+    return prompt;
+  };
+
+  const saveProfile=async()=>{
+    try{
+      await supabase.from("profiles").eq("id",profile.id).update({
+        full_name:profileForm.full_name,
+        age:profileForm.age?parseInt(profileForm.age):null,
+        role:profileForm.role,
+        personality:profileForm.personality
+      }).execute();
+      setProfile(p=>({...p,...profileForm,age:profileForm.age?parseInt(profileForm.age):null}));
+      setProfileSaved(true);setTimeout(()=>setProfileSaved(false),2000);
+    }catch(e){alert("Erro ao salvar perfil: "+e.message)}
+  };
   const updateTokens=(r)=>{const m=MODELS.find(x=>x.id===getModel())||MODELS[0];setSessionTokens(p=>({input:p.input+r.inputTokens,output:p.output+r.outputTokens,cached:p.cached+r.cacheReadTokens,cost:p.cost+(r.inputTokens*m.inputPrice+r.outputTokens*m.outputPrice)/1000000}))};
 
   const sendInitial=async(conv)=>{setIsLoading(true);try{const r=await callAI([{role:"user",content:"Olá! Quero treinar como dar feedback."}],getSysPrompt());const m={conversation_id:conv.id,role:"assistant",content:r.text,input_tokens:r.inputTokens,output_tokens:r.outputTokens,cache_read_tokens:r.cacheReadTokens};await saveMessage(m);setMessages([{...m,created_at:new Date().toISOString()}]);updateTokens(r)}catch(e){setMessages([{role:"assistant",content:`Erro: ${e.message}`,created_at:new Date().toISOString()}])}setIsLoading(false)};
@@ -186,6 +214,8 @@ export default function NitzscheApp() {
 
   const planModal=showActionPlan&&actionPlan&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={()=>setShowActionPlan(false)}><div style={{background:C.bgCard,borderRadius:20,padding:32,width:"100%",maxWidth:640,maxHeight:"85vh",overflow:"auto",border:`1px solid ${C.border}`,boxShadow:C.shadow}} onClick={e=>e.stopPropagation()}><h3 style={{fontFamily:FONT_DISPLAY,fontSize:20,marginBottom:4}}>{actionPlan.titulo}</h3><p style={{fontSize:14,color:C.gray2,marginBottom:20,lineHeight:1.6}}>{actionPlan.resumo}</p>{actionPlan.itens?.map((item,i)=><div key={i} style={{background:C.bgInput,borderRadius:12,padding:"14px 16px",marginBottom:10,border:`1px solid ${actionChecks[i]?C.green:C.border}`,transition:"all 0.2s"}}><div style={{display:"flex",alignItems:"flex-start",gap:10}}><button onClick={()=>toggleCheck(i)} style={{width:22,height:22,borderRadius:6,border:`2px solid ${actionChecks[i]?C.green:C.gray4}`,background:actionChecks[i]?C.green:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2,transition:"all 0.2s"}}>{actionChecks[i]&&<Icon.Check/>}</button><div style={{flex:1}}><div style={{fontSize:15,fontWeight:600,color:actionChecks[i]?C.gray3:C.white,textDecoration:actionChecks[i]?"line-through":"none",marginBottom:4}}>{item.acao}</div><div style={{fontSize:13,color:C.gray3}}><strong style={{color:C.gray2}}>Prazo:</strong> {item.prazo}</div><div style={{fontSize:13,color:C.gray3}}><strong style={{color:C.gray2}}>Como:</strong> {item.como}</div><div style={{fontSize:13,color:C.gray3}}><strong style={{color:C.gray2}}>Indicador:</strong> {item.indicador}</div></div></div></div>)}{actionPlan.dicas_finais&&<div style={{background:C.bgInput,borderRadius:12,padding:"14px 16px",marginTop:12,borderLeft:`3px solid ${C.green}`}}><div style={{fontSize:12,fontWeight:600,color:C.green,textTransform:"uppercase",marginBottom:6}}>Dicas finais</div><div style={{fontSize:14,color:C.gray1,lineHeight:1.6}}>{actionPlan.dicas_finais}</div></div>}<Btn onClick={()=>setShowActionPlan(false)} style={{width:"100%",marginTop:20}}>Fechar</Btn></div></div>;
 
+  const profileModal=showProfile&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={()=>setShowProfile(false)}><div style={{background:C.bgCard,borderRadius:20,padding:32,width:"100%",maxWidth:480,border:`1px solid ${C.border}`,boxShadow:C.shadow}} onClick={e=>e.stopPropagation()}><h3 style={{fontFamily:FONT_DISPLAY,fontSize:20,marginBottom:4}}>Meu Perfil</h3><p style={{fontSize:13,color:C.gray3,marginBottom:20}}>Preencha uma vez. A IA usará esses dados em todas as suas conversas.</p><Input label="Nome completo" placeholder="Seu nome" value={profileForm.full_name} onChange={e=>setProfileForm(p=>({...p,full_name:e.target.value}))}/><Input label="Idade" type="number" placeholder="Ex: 35" value={profileForm.age} onChange={e=>setProfileForm(p=>({...p,age:e.target.value}))}/><Input label="Cargo" placeholder="Ex: Gerente de Vendas" value={profileForm.role} onChange={e=>setProfileForm(p=>({...p,role:e.target.value}))}/><TextArea label="Perfil de personalidade (DISC / MBTI)" placeholder="Ex: Perfil D (Dominância) no DISC — direto, orientado a resultados, gosta de desafios. Ou ENTJ no MBTI — líder natural, estratégico, decisivo." value={profileForm.personality} onChange={e=>setProfileForm(p=>({...p,personality:e.target.value}))}/><div style={{display:"flex",gap:10}}><Btn onClick={saveProfile} style={{flex:1}}>{profileSaved?<><Icon.Check/> Salvo!</>:"Salvar perfil"}</Btn><Btn variant="ghost" onClick={()=>setShowProfile(false)} style={{border:`1px solid ${C.border}`}}>Fechar</Btn></div></div></div>;
+
   // CHAT
   const renderChat=()=>{if(!activeConvId)return<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:40}}><div style={{textAlign:"center",maxWidth:380}} className="fade-in"><Logo size={56}/><h2 style={{fontFamily:FONT_DISPLAY,fontSize:24,marginTop:18,marginBottom:8}}>Feedback Training</h2><p style={{color:C.gray3,fontSize:15,lineHeight:1.6,marginBottom:24}}>Treine suas habilidades de feedback com IA.</p><Btn onClick={startNew} style={{margin:"0 auto"}}><Icon.Plus/> Novo Treinamento</Btn>{!getKey()&&<p style={{color:C.danger,fontSize:13,marginTop:16}}>Configure sua API Key da OpenAI em ⚙️</p>}</div></div>;
     return<><div style={{flex:1,overflowY:"auto",padding:"20px 24px"}}><div style={{maxWidth:700,margin:"0 auto"}}>{messages.map((msg,i)=><div key={i} style={{display:"flex",gap:10,marginBottom:18,alignItems:"flex-start"}} className="fade-in"><div style={{width:30,height:30,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0,background:msg.role==="assistant"?`linear-gradient(135deg,${C.green},${C.greenBright})`:C.bgInput,border:msg.role==="user"?`1px solid ${C.border}`:"none",color:C.white}}>{msg.role==="assistant"?"N":(profile?.full_name?.[0]?.toUpperCase()||"U")}</div><div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",color:msg.role==="assistant"?C.green:C.gray3,marginBottom:3}}>{msg.role==="assistant"?"Nitzsche Coach":"Você"}</div><div style={{fontSize:15,lineHeight:1.65,color:C.gray1,whiteSpace:"pre-wrap"}}>{msg.content}</div></div></div>)}{isLoading&&<div style={{display:"flex",gap:10,marginBottom:18}}><div style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:C.white}}>N</div><div><div style={{fontSize:11,fontWeight:600,color:C.green,marginBottom:3,textTransform:"uppercase"}}>Nitzsche Coach</div><Typing/></div></div>}<div ref={chatEndRef}/></div></div>
@@ -193,12 +223,15 @@ export default function NitzscheApp() {
     <div style={{display:"flex",gap:10,marginTop:10,alignItems:"center",flexWrap:"wrap"}}>{messages.length>=2&&<Btn small onClick={generateActionPlan} disabled={actionPlanLoading} variant="ghost" style={{border:`1px solid ${C.border}`}}>{actionPlanLoading?"Gerando...":<><Icon.Clipboard/> Gerar Plano de Ação</>}</Btn>}{actionPlan&&<Btn small onClick={()=>setShowActionPlan(true)} variant="ghost" style={{border:`1px solid ${C.green}`,color:C.green}}><Icon.Check/> Ver Plano</Btn>}{sessionTokens.input>0&&<span style={{fontSize:11,color:C.gray4,marginLeft:"auto"}}>{sessionTokens.input+sessionTokens.output} tokens · ${sessionTokens.cost.toFixed(4)}</span>}</div></div></div></>};
 
   const activeConv=conversations.find(c=>c.id===activeConvId);
-  return(<div style={{display:"flex",height:"100vh",overflow:"hidden"}}><style>{cssBase}</style>{settingsModal}{promptModal}{planModal}
+  return(<div style={{display:"flex",height:"100vh",overflow:"hidden"}}><style>{cssBase}</style>{settingsModal}{promptModal}{planModal}{profileModal}
     <div style={{width:270,minWidth:270,background:C.bgSurface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",height:"100vh"}}>
       <div style={{padding:"16px 14px 12px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:10}}><Logo size={30}/><span style={{fontFamily:FONT_DISPLAY,fontSize:17,fontWeight:700}}>Nitzsche</span></div>
       <button onClick={startNew} style={{margin:"10px 12px",padding:"10px 14px",borderRadius:10,border:`1px dashed ${C.border}`,background:"transparent",color:C.gray2,fontSize:14,fontFamily:FONT,cursor:"pointer",display:"flex",alignItems:"center",gap:8}}><Icon.Plus/> Novo Treinamento</button>
       <div style={{flex:1,overflowY:"auto",padding:"2px 6px"}}>{conversations.map(conv=><div key={conv.id} onClick={()=>resumeConv(conv)} style={{padding:"9px 10px",borderRadius:8,cursor:"pointer",marginBottom:2,fontSize:13,color:conv.id===activeConvId?C.white:C.gray2,background:conv.id===activeConvId?C.bgCard:"transparent",display:"flex",alignItems:"center",gap:7,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",transition:"all 0.15s"}}><Icon.Chat/><span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{conv.title}</span></div>)}{!conversations.length&&<p style={{fontSize:13,color:C.gray4,textAlign:"center",padding:"36px 14px",lineHeight:1.6}}>Nenhuma conversa ainda.</p>}</div>
-      {profile?.is_admin&&<div style={{padding:"8px 12px",borderTop:`1px solid ${C.border}`}}><button onClick={()=>setShowPromptEditor(true)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",color:C.gray2,fontSize:12,fontFamily:FONT,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Icon.Edit/> Editar Prompt</button></div>}
+      <div style={{padding:"8px 12px",borderTop:`1px solid ${C.border}`}}>
+        <button onClick={()=>setShowProfile(true)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",color:C.gray2,fontSize:12,fontFamily:FONT,cursor:"pointer",display:"flex",alignItems:"center",gap:6,marginBottom:4}}><Icon.User/> Meu Perfil {profile?.personality?<span style={{marginLeft:"auto",color:C.green,fontSize:10}}>✓</span>:""}</button>
+        {profile?.is_admin&&<button onClick={()=>setShowPromptEditor(true)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",color:C.gray2,fontSize:12,fontFamily:FONT,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Icon.Edit/> Editar Prompt</button>}
+      </div>
       <div style={{padding:"10px 14px",borderTop:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:8}}>
         <div style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>{profile?.full_name?.[0]?.toUpperCase()||"U"}</div>
         <div style={{flex:1,overflow:"hidden"}}><div style={{fontSize:13,fontWeight:500,color:C.gray1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{profile?.full_name}</div><div style={{fontSize:11,color:C.gray4}}>{profile?.email}</div></div>
