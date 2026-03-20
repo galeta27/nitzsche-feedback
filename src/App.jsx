@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import ProfileAssessment, { profileToText } from "./ProfileAssessment";
 
 const SUPABASE_URL = "https://uqstflzxsivifkeqdptk.supabase.co";
 const SUPABASE_KEY = "sb_publishable_wzNezmXh8vHD9yBSbwnPUw_ImplTerw";
@@ -74,15 +75,6 @@ const ACTION_PLAN_PROMPT = `Com base na conversa de treinamento de feedback acim
 {"titulo":"Título do plano","resumo":"Resumo de 2-3 frases","itens":[{"acao":"Descrição da ação","prazo":"Prazo sugerido","como":"Como executar","indicador":"Como saber se deu certo"}],"dicas_finais":"Dicas gerais"}
 Gere entre 3 e 6 itens. Responda APENAS com o JSON.`;
 
-const DISCOVERY_PROMPT = `Você é um especialista em análise de perfil comportamental. Seu objetivo é ajudar o usuário a construir o perfil de personalidade de uma pessoa no ambiente de trabalho, usando os modelos DISC e MBTI como referência.
-
-REGRAS:
-- Faça UMA pergunta por vez, no máximo 6 perguntas no total.
-- As perguntas devem ser sobre comportamentos observáveis: como a pessoa reage sob pressão, como se comunica, como toma decisões, como lida com conflitos, se é mais analítica ou emocional, se prefere trabalhar sozinha ou em grupo, como reage a mudanças.
-- Use linguagem simples e direta, em português brasileiro.
-- Quando tiver informações suficientes (mínimo 3 respostas), finalize com a frase exata "PERFIL IDENTIFICADO:" seguida de um parágrafo descrevendo o perfil da pessoa, incluindo referências aos perfis DISC e/ou MBTI mais prováveis.
-- Comece se apresentando brevemente e fazendo a primeira pergunta.`;
-
 const Icon = {
   Send:()=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>,
   Plus:()=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
@@ -122,14 +114,7 @@ export default function NitzscheApp() {
   const [chatInput, setChatInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [sessionTokens, setSessionTokens] = useState({input:0,output:0,cached:0,cost:0});
-  // Onboarding receptor
-  const [onboardStep, setOnboardStep] = useState(0); // 0=off, 1=form, 2=discovery
-  const [targetProfile, setTargetProfile] = useState({age:"",role:"",personality:"",knowsProfile:null});
-  // Discovery chat
-  const [discoveryMsgs, setDiscoveryMsgs] = useState([]);
-  const [discoveryInput, setDiscoveryInput] = useState("");
-  const [discoveryLoading, setDiscoveryLoading] = useState(false);
-  const [discoveryDone, setDiscoveryDone] = useState(false);
+  const [onboardStep, setOnboardStep] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [showActionPlan, setShowActionPlan] = useState(false);
@@ -145,10 +130,8 @@ export default function NitzscheApp() {
   const [profileForm, setProfileForm] = useState({full_name:"",age:"",role:"",personality:""});
   const [profileSaved, setProfileSaved] = useState(false);
   const chatEndRef = useRef(null);
-  const discoveryEndRef = useRef(null);
 
   useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:"smooth"})},[messages,isLoading]);
-  useEffect(()=>{discoveryEndRef.current?.scrollIntoView({behavior:"smooth"})},[discoveryMsgs]);
   useEffect(()=>{if(authState==="authenticated"){loadProfile();loadGlobalSettings()}},[authState]);
   useEffect(()=>{if(profile){loadConversations();setProfileForm({full_name:profile.full_name||"",age:profile.age||"",role:profile.role||"",personality:profile.personality||""})}},[profile]);
 
@@ -182,35 +165,10 @@ export default function NitzscheApp() {
   const saveMessage=async(d)=>{try{await supabase.from("messages").insert(d).execute()}catch(e){console.error(e)}};
 
   const startNew=()=>{
-    setOnboardStep(1);
-    setTargetProfile({age:"",role:"",personality:"",knowsProfile:null});
-    setDiscoveryMsgs([]);setDiscoveryDone(false);setDiscoveryInput("");
-    setActiveConvId(null);setMessages([]);
+    setOnboardStep(1);setActiveConvId(null);setMessages([]);
     setSessionTokens({input:0,output:0,cached:0,cost:0});setActionPlan(null);setActionChecks({});
   };
-
-  const finishOnboarding=async()=>{
-    const conv=await saveConversation({user_id:profile.id,title:`Feedback → ${targetProfile.role||"Colaborador"}`,user_profile:{name:profile.full_name,age:profile.age,role:profile.role,personality:profile.personality},target_profile:targetProfile,situation_context:""});
-    if(conv){setConversations(p=>[conv,...p]);setActiveConvId(conv.id);setOnboardStep(0);sendInitial(conv)}
-  };
-
-  const startDiscovery=async()=>{
-    setDiscoveryLoading(true);
-    try{const r=await callAI(globalApiKey,[{role:"user",content:"Preciso de ajuda para identificar o perfil de personalidade da pessoa para quem vou dar feedback."}],DISCOVERY_PROMPT);setDiscoveryMsgs([{role:"assistant",content:r.text}])}
-    catch(e){setDiscoveryMsgs([{role:"assistant",content:`Erro: ${e.message}`}])}
-    setDiscoveryLoading(false);
-  };
-
-  const sendDiscovery=async()=>{
-    if(!discoveryInput.trim()||discoveryLoading)return;
-    const up=[...discoveryMsgs,{role:"user",content:discoveryInput.trim()}];
-    setDiscoveryMsgs(up);setDiscoveryInput("");setDiscoveryLoading(true);
-    try{const r=await callAI(globalApiKey,up,DISCOVERY_PROMPT);setDiscoveryMsgs([...up,{role:"assistant",content:r.text}]);
-      if(r.text.includes("PERFIL IDENTIFICADO:")){setTargetProfile(p=>({...p,personality:r.text.split("PERFIL IDENTIFICADO:")[1].trim()}));setDiscoveryDone(true)}}
-    catch(e){setDiscoveryMsgs([...up,{role:"assistant",content:`Erro: ${e.message}`}])}
-    setDiscoveryLoading(false);
-  };
-  const resumeConv=(conv)=>{setActiveConvId(conv.id);setActionPlan(null);setActionChecks({})};
+  const resumeConv=(conv)=>{setActiveConvId(conv.id);setOnboardStep(0);setActionPlan(null);setActionChecks({})};
 
   const getSysPrompt=()=>{
     let prompt = buildPrompt(promptText);
@@ -321,50 +279,15 @@ export default function NitzscheApp() {
 
   // ONBOARDING RECEPTOR
   const renderOnboarding=()=>(
-    <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:24,overflowY:"auto"}}>
-      <div style={{background:C.bgCard,borderRadius:20,padding:"36px 32px",width:"100%",maxWidth:540,border:`1px solid ${C.border}`,boxShadow:C.shadow}} className="fade-in">
-        <h2 style={{fontFamily:FONT_DISPLAY,fontSize:22,marginBottom:4}}>Sobre quem vai receber o feedback</h2>
-        <p style={{fontSize:14,color:C.gray3,marginBottom:22}}>Essas informações ajudam a IA a personalizar o treinamento.</p>
-
-        <Input label="Idade" type="number" placeholder="Ex: 28" value={targetProfile.age} onChange={e=>setTargetProfile(p=>({...p,age:e.target.value}))}/>
-        <Input label="Cargo" placeholder="Ex: Consultor de Vendas" value={targetProfile.role} onChange={e=>setTargetProfile(p=>({...p,role:e.target.value}))}/>
-
-        {targetProfile.knowsProfile===null&&<div>
-          <p style={{color:C.gray1,fontSize:16,marginBottom:16,lineHeight:1.6}}>Você conhece o perfil de personalidade dessa pessoa?</p>
-          <div style={{display:"flex",gap:12}}>
-            <Btn style={{flex:1}} variant="ghost" onClick={()=>setTargetProfile(p=>({...p,knowsProfile:true}))}>Sim, conheço</Btn>
-            <Btn style={{flex:1}} variant="ghost" onClick={()=>{setTargetProfile(p=>({...p,knowsProfile:false}));startDiscovery()}}>Não, preciso de ajuda</Btn>
-          </div>
-        </div>}
-
-        {targetProfile.knowsProfile===true&&<div>
-          <TextArea label="Perfil de personalidade (DISC / MBTI)" placeholder="Descreva como a pessoa se comporta: comunicação, tomada de decisão, reação a conflitos..." value={targetProfile.personality} onChange={e=>setTargetProfile(p=>({...p,personality:e.target.value}))}/>
-        </div>}
-
-        {targetProfile.knowsProfile===false&&<div>
-          <div style={{background:C.bgInput,borderRadius:12,border:`1px solid ${C.border}`,maxHeight:300,overflowY:"auto",marginBottom:14,padding:14}}>
-            {discoveryMsgs.map((m,i)=><div key={i} style={{marginBottom:12}}>
-              <div style={{fontSize:12,fontWeight:600,color:m.role==="assistant"?C.green:C.gray3,textTransform:"uppercase",marginBottom:4}}>{m.role==="assistant"?"Assistente":"Você"}</div>
-              <div style={{fontSize:15,color:C.gray1,lineHeight:1.65}}>{m.content}</div>
-            </div>)}
-            {discoveryLoading&&<Typing/>}
-            <div ref={discoveryEndRef}/>
-          </div>
-          {!discoveryDone?<div style={{display:"flex",gap:8}}>
-            <input value={discoveryInput} onChange={e=>setDiscoveryInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendDiscovery()} placeholder="Sua resposta..." style={{flex:1,padding:"10px 14px",borderRadius:10,border:`1px solid ${C.border}`,background:C.bgInput,color:C.white,fontSize:15,fontFamily:FONT,outline:"none"}}/>
-            <Btn small onClick={sendDiscovery} disabled={discoveryLoading}>Enviar</Btn>
-          </div>:<div style={{background:C.bgInput,borderRadius:10,padding:"14px 16px",marginBottom:14,border:`1px solid ${C.green}`}}>
-            <div style={{fontSize:12,fontWeight:600,color:C.green,textTransform:"uppercase",marginBottom:6}}>Perfil Identificado</div>
-            <div style={{fontSize:15,color:C.gray1,lineHeight:1.6}}>{targetProfile.personality}</div>
-          </div>}
-        </div>}
-
-        <div style={{display:"flex",gap:10,marginTop:24}}>
-          <Btn variant="ghost" onClick={()=>{setOnboardStep(0);setTargetProfile({age:"",role:"",personality:"",knowsProfile:null})}} style={{border:`1px solid ${C.border}`}}>Cancelar</Btn>
-          <Btn onClick={finishOnboarding} disabled={!targetProfile.age||!targetProfile.role||!targetProfile.personality} style={{flex:1}}>Iniciar Treinamento <Icon.Arrow/></Btn>
-        </div>
-      </div>
-    </div>
+    <ProfileAssessment
+      colors={C}
+      Font={FONT}
+      onCancel={()=>setOnboardStep(0)}
+      onComplete={async(target)=>{
+        const conv=await saveConversation({user_id:profile.id,title:`Feedback → ${target.role||"Colaborador"}`,user_profile:{name:profile.full_name,age:profile.age,role:profile.role,personality:profile.personality},target_profile:target,situation_context:""});
+        if(conv){setConversations(p=>[conv,...p]);setActiveConvId(conv.id);setOnboardStep(0);setMessages([]);sendInitial(conv)}
+      }}
+    />
   );
 
   // CHAT
