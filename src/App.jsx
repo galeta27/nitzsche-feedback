@@ -170,27 +170,28 @@ export default function NitzscheApp() {
   };
   const resumeConv=(conv)=>{setActiveConvId(conv.id);setOnboardStep(0);setActionPlan(null);setActionChecks({})};
 
-  const getSysPrompt=()=>{
+  const getSysPrompt=(convOverride)=>{
     let prompt = buildPrompt(promptText);
     if(profile?.full_name || profile?.age || profile?.role || profile?.personality){
-      prompt += `\n\nPERFIL DO USUÁRIO (já coletado, não pergunte novamente):
+      prompt += `\n\nPERFIL DO USUÁRIO QUE VAI DAR O FEEDBACK (já coletado, não pergunte novamente):
 - Nome: ${profile.full_name||"não informado"}
 - Idade: ${profile.age||"não informada"}
 - Cargo: ${profile.role||"não informado"}
 - Perfil de personalidade: ${profile.personality||"não informado"}`;
     }
-    const conv = conversations.find(c=>c.id===activeConvId);
+    const conv = convOverride || conversations.find(c=>c.id===activeConvId);
     if(conv?.target_profile?.role || conv?.target_profile?.personality){
-      prompt += `\n\nPERFIL DO RECEPTOR DO FEEDBACK (já coletado, não pergunte novamente):
+      prompt += `\n\nPERFIL DA PESSOA QUE VAI RECEBER O FEEDBACK (já coletado via questionário, não pergunte novamente):
 - Nome: ${conv.target_profile.name||"não informado"}
 - Idade: ${conv.target_profile.age||"não informada"}
 - Cargo: ${conv.target_profile.role||"não informado"}
-- Perfil de personalidade: ${conv.target_profile.personality||"não informado"}`;
+- Perfil comportamental detalhado:
+${conv.target_profile.personality||"não informado"}`;
     }
     if(conv?.situation_context){
-      prompt += `\n\nCONTEXTO/SITUAÇÃO:\n${conv.situation_context}`;
+      prompt += `\n\nCONTEXTO/SITUAÇÃO DESCRITA PELO USUÁRIO:\n${conv.situation_context}`;
     }
-    prompt += `\nUse essas informações para personalizar a experiência. Se algum campo estiver como "não informado", você pode perguntar naturalmente.`;
+    prompt += `\n\nIMPORTANTE: Use TODOS os dados acima (perfis e contexto) para personalizar completamente a experiência de treinamento. Esses dados já foram coletados — não pergunte novamente. Comece diretamente o treinamento considerando esses perfis e a situação.`;
     return prompt;
   };
 
@@ -213,7 +214,19 @@ export default function NitzscheApp() {
   };
   const updateTokens=(r)=>{const m=MODELS.find(x=>x.id===getModel())||MODELS[0];setSessionTokens(p=>({input:p.input+r.inputTokens,output:p.output+r.outputTokens,cached:p.cached+r.cacheReadTokens,cost:p.cost+(r.inputTokens*m.inputPrice+r.outputTokens*m.outputPrice)/1000000}))};
 
-  const sendInitial=async(conv)=>{setIsLoading(true);try{const r=await callAI(globalApiKey,[{role:"user",content:"Olá! Quero treinar como dar feedback."}],getSysPrompt());const m={conversation_id:conv.id,role:"assistant",content:r.text,input_tokens:r.inputTokens,output_tokens:r.outputTokens,cache_read_tokens:r.cacheReadTokens};await saveMessage(m);setMessages([{...m,created_at:new Date().toISOString()}]);updateTokens(r)}catch(e){setMessages([{role:"assistant",content:`Erro: ${e.message}`,created_at:new Date().toISOString()}])}setIsLoading(false)};
+  const sendInitial=async(conv)=>{
+    setIsLoading(true);
+    const hasStory = conv.situation_context?.includes("história criada pela IA");
+    const firstMsg = hasStory
+      ? "Olá! Gostaria de treinar feedback através de uma história interativa. Use o perfil da pessoa que vai receber o feedback para criar uma situação realista onde eu precise dar feedback a alguém com esse perfil."
+      : `Olá! Quero treinar como dar feedback para essa situação que descrevi. Considere o perfil da pessoa que vai receber e me ajude a construir a melhor abordagem.`;
+    try{
+      const r=await callAI(globalApiKey,[{role:"user",content:firstMsg}],getSysPrompt(conv));
+      const m={conversation_id:conv.id,role:"assistant",content:r.text,input_tokens:r.inputTokens,output_tokens:r.outputTokens,cache_read_tokens:r.cacheReadTokens};
+      await saveMessage(m);setMessages([{...m,created_at:new Date().toISOString()}]);updateTokens(r);
+    }catch(e){setMessages([{role:"assistant",content:`Erro: ${e.message}`,created_at:new Date().toISOString()}])}
+    setIsLoading(false);
+  };
 
   const sendMessage=async()=>{if(!chatInput.trim()||isLoading||!activeConvId)return;const text=chatInput.trim();setChatInput("");const um={conversation_id:activeConvId,role:"user",content:text,input_tokens:0,output_tokens:0};await saveMessage(um);const nm=[...messages,{...um,created_at:new Date().toISOString()}];setMessages(nm);setIsLoading(true);try{const r=await callAI(globalApiKey,nm.map(m=>({role:m.role,content:m.content})),getSysPrompt());const am={conversation_id:activeConvId,role:"assistant",content:r.text,input_tokens:r.inputTokens,output_tokens:r.outputTokens,cache_read_tokens:r.cacheReadTokens};await saveMessage(am);setMessages(p=>[...p,{...am,created_at:new Date().toISOString()}]);updateTokens(r)}catch(e){setMessages(p=>[...p,{role:"assistant",content:`Erro: ${e.message}`,created_at:new Date().toISOString()}])}setIsLoading(false)};
 
