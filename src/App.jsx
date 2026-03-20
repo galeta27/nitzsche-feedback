@@ -50,9 +50,9 @@ const MODELS = [
   { id: "gpt-4.5-preview", name: "GPT-4.5 Preview", desc: "Mais inteligente — $75/$150 por 1M tokens", inputPrice: 75, outputPrice: 150 },
 ];
 
-const callAI = async (messages, systemPrompt) => {
-  const apiKey = getKey();
-  if (!apiKey) throw new Error("API Key da OpenAI não configurada. Clique em ⚙️ Configurações.");
+const callAI = async (apiKeyParam, messages, systemPrompt) => {
+  const apiKey = apiKeyParam || getKey();
+  if (!apiKey) throw new Error("API Key da OpenAI não configurada. Peça ao administrador para configurar.");
   const model = getModel();
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
@@ -133,7 +133,8 @@ export default function NitzscheApp() {
   const [showSettings, setShowSettings] = useState(false);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [showActionPlan, setShowActionPlan] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState(getKey());
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [globalApiKey, setGlobalApiKey] = useState("");
   const [selectedModel, setSelectedModel] = useState(getModel());
   const [promptText, setPromptText] = useState(DEFAULT_PROMPT);
   const [promptSaved, setPromptSaved] = useState(false);
@@ -148,8 +149,20 @@ export default function NitzscheApp() {
 
   useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:"smooth"})},[messages,isLoading]);
   useEffect(()=>{discoveryEndRef.current?.scrollIntoView({behavior:"smooth"})},[discoveryMsgs]);
-  useEffect(()=>{if(authState==="authenticated")loadProfile()},[authState]);
+  useEffect(()=>{if(authState==="authenticated"){loadProfile();loadGlobalSettings()}},[authState]);
   useEffect(()=>{if(profile){loadConversations();setProfileForm({full_name:profile.full_name||"",age:profile.age||"",role:profile.role||"",personality:profile.personality||""})}},[profile]);
+
+  const loadGlobalSettings=async()=>{
+    try{
+      const data=await supabase.from("app_settings").select().execute();
+      if(Array.isArray(data)){
+        const keyRow=data.find(r=>r.key==="openai_api_key");
+        const modelRow=data.find(r=>r.key==="openai_model");
+        if(keyRow){setGlobalApiKey(keyRow.value);setApiKeyInput(keyRow.value)}
+        if(modelRow){setSelectedModel(modelRow.value);setModel(modelRow.value)}
+      }
+    }catch{}
+  };
   useEffect(()=>{if(activeConvId)loadMessages(activeConvId);else setMessages([])},[activeConvId]);
   useEffect(()=>{const s=localStorage.getItem("nitzsche_prompt");if(s)setPromptText(s)},[]);
 
@@ -183,7 +196,7 @@ export default function NitzscheApp() {
 
   const startDiscovery=async()=>{
     setDiscoveryLoading(true);
-    try{const r=await callAI([{role:"user",content:"Preciso de ajuda para identificar o perfil de personalidade da pessoa para quem vou dar feedback."}],DISCOVERY_PROMPT);setDiscoveryMsgs([{role:"assistant",content:r.text}])}
+    try{const r=await callAI(globalApiKey,[{role:"user",content:"Preciso de ajuda para identificar o perfil de personalidade da pessoa para quem vou dar feedback."}],DISCOVERY_PROMPT);setDiscoveryMsgs([{role:"assistant",content:r.text}])}
     catch(e){setDiscoveryMsgs([{role:"assistant",content:`Erro: ${e.message}`}])}
     setDiscoveryLoading(false);
   };
@@ -192,7 +205,7 @@ export default function NitzscheApp() {
     if(!discoveryInput.trim()||discoveryLoading)return;
     const up=[...discoveryMsgs,{role:"user",content:discoveryInput.trim()}];
     setDiscoveryMsgs(up);setDiscoveryInput("");setDiscoveryLoading(true);
-    try{const r=await callAI(up,DISCOVERY_PROMPT);setDiscoveryMsgs([...up,{role:"assistant",content:r.text}]);
+    try{const r=await callAI(globalApiKey,up,DISCOVERY_PROMPT);setDiscoveryMsgs([...up,{role:"assistant",content:r.text}]);
       if(r.text.includes("PERFIL IDENTIFICADO:")){setTargetProfile(p=>({...p,personality:r.text.split("PERFIL IDENTIFICADO:")[1].trim()}));setDiscoveryDone(true)}}
     catch(e){setDiscoveryMsgs([...up,{role:"assistant",content:`Erro: ${e.message}`}])}
     setDiscoveryLoading(false);
@@ -238,11 +251,11 @@ export default function NitzscheApp() {
   };
   const updateTokens=(r)=>{const m=MODELS.find(x=>x.id===getModel())||MODELS[0];setSessionTokens(p=>({input:p.input+r.inputTokens,output:p.output+r.outputTokens,cached:p.cached+r.cacheReadTokens,cost:p.cost+(r.inputTokens*m.inputPrice+r.outputTokens*m.outputPrice)/1000000}))};
 
-  const sendInitial=async(conv)=>{setIsLoading(true);try{const r=await callAI([{role:"user",content:"Olá! Quero treinar como dar feedback."}],getSysPrompt());const m={conversation_id:conv.id,role:"assistant",content:r.text,input_tokens:r.inputTokens,output_tokens:r.outputTokens,cache_read_tokens:r.cacheReadTokens};await saveMessage(m);setMessages([{...m,created_at:new Date().toISOString()}]);updateTokens(r)}catch(e){setMessages([{role:"assistant",content:`Erro: ${e.message}`,created_at:new Date().toISOString()}])}setIsLoading(false)};
+  const sendInitial=async(conv)=>{setIsLoading(true);try{const r=await callAI(globalApiKey,[{role:"user",content:"Olá! Quero treinar como dar feedback."}],getSysPrompt());const m={conversation_id:conv.id,role:"assistant",content:r.text,input_tokens:r.inputTokens,output_tokens:r.outputTokens,cache_read_tokens:r.cacheReadTokens};await saveMessage(m);setMessages([{...m,created_at:new Date().toISOString()}]);updateTokens(r)}catch(e){setMessages([{role:"assistant",content:`Erro: ${e.message}`,created_at:new Date().toISOString()}])}setIsLoading(false)};
 
-  const sendMessage=async()=>{if(!chatInput.trim()||isLoading||!activeConvId)return;const text=chatInput.trim();setChatInput("");const um={conversation_id:activeConvId,role:"user",content:text,input_tokens:0,output_tokens:0};await saveMessage(um);const nm=[...messages,{...um,created_at:new Date().toISOString()}];setMessages(nm);setIsLoading(true);try{const r=await callAI(nm.map(m=>({role:m.role,content:m.content})),getSysPrompt());const am={conversation_id:activeConvId,role:"assistant",content:r.text,input_tokens:r.inputTokens,output_tokens:r.outputTokens,cache_read_tokens:r.cacheReadTokens};await saveMessage(am);setMessages(p=>[...p,{...am,created_at:new Date().toISOString()}]);updateTokens(r)}catch(e){setMessages(p=>[...p,{role:"assistant",content:`Erro: ${e.message}`,created_at:new Date().toISOString()}])}setIsLoading(false)};
+  const sendMessage=async()=>{if(!chatInput.trim()||isLoading||!activeConvId)return;const text=chatInput.trim();setChatInput("");const um={conversation_id:activeConvId,role:"user",content:text,input_tokens:0,output_tokens:0};await saveMessage(um);const nm=[...messages,{...um,created_at:new Date().toISOString()}];setMessages(nm);setIsLoading(true);try{const r=await callAI(globalApiKey,nm.map(m=>({role:m.role,content:m.content})),getSysPrompt());const am={conversation_id:activeConvId,role:"assistant",content:r.text,input_tokens:r.inputTokens,output_tokens:r.outputTokens,cache_read_tokens:r.cacheReadTokens};await saveMessage(am);setMessages(p=>[...p,{...am,created_at:new Date().toISOString()}]);updateTokens(r)}catch(e){setMessages(p=>[...p,{role:"assistant",content:`Erro: ${e.message}`,created_at:new Date().toISOString()}])}setIsLoading(false)};
 
-  const generateActionPlan=async()=>{if(!activeConvId||messages.length<2)return;setActionPlanLoading(true);try{const hist=messages.map(m=>({role:m.role,content:m.content}));hist.push({role:"user",content:ACTION_PLAN_PROMPT});const r=await callAI(hist,getSysPrompt());const parsed=JSON.parse(r.text.replace(/```json?|```/g,"").trim());setActionPlan(parsed);setActionChecks({});setShowActionPlan(true);updateTokens(r)}catch(e){alert("Erro ao gerar plano: "+e.message)}setActionPlanLoading(false)};
+  const generateActionPlan=async()=>{if(!activeConvId||messages.length<2)return;setActionPlanLoading(true);try{const hist=messages.map(m=>({role:m.role,content:m.content}));hist.push({role:"user",content:ACTION_PLAN_PROMPT});const r=await callAI(globalApiKey,hist,getSysPrompt());const parsed=JSON.parse(r.text.replace(/```json?|```/g,"").trim());setActionPlan(parsed);setActionChecks({});setShowActionPlan(true);updateTokens(r)}catch(e){alert("Erro ao gerar plano: "+e.message)}setActionPlanLoading(false)};
   const toggleCheck=(i)=>setActionChecks(p=>({...p,[i]:!p[i]}));
 
   const savePrompt=()=>{localStorage.setItem("nitzsche_prompt",promptText);setPromptSaved(true);setTimeout(()=>setPromptSaved(false),2000)};
@@ -264,7 +277,41 @@ export default function NitzscheApp() {
     </div>);
 
   // MODALS
-  const settingsModal=showSettings&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={()=>setShowSettings(false)}><div style={{background:C.bgCard,borderRadius:20,padding:32,width:"100%",maxWidth:520,maxHeight:"85vh",overflow:"auto",border:`1px solid ${C.border}`,boxShadow:C.shadow}} onClick={e=>e.stopPropagation()}><h3 style={{fontFamily:FONT_DISPLAY,fontSize:20,marginBottom:20}}>Configurações</h3><Input label="API Key da OpenAI" type="password" placeholder="sk-..." value={apiKeyInput} onChange={e=>setApiKeyInput(e.target.value)}/><p style={{fontSize:12,color:C.gray4,marginBottom:16,marginTop:-10}}>Salva apenas no seu navegador.</p><div style={{marginBottom:18}}><label style={{display:"block",fontSize:14,fontWeight:500,color:C.gray2,marginBottom:8}}>Modelo</label>{MODELS.map(m=><div key={m.id} onClick={()=>setSelectedModel(m.id)} style={{padding:"10px 14px",borderRadius:10,border:`1px solid ${selectedModel===m.id?C.green:C.border}`,background:selectedModel===m.id?C.bgInput:"transparent",marginBottom:6,cursor:"pointer",transition:"all 0.2s"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:14,fontWeight:600,color:selectedModel===m.id?C.white:C.gray2}}>{m.name}</span>{selectedModel===m.id&&<Icon.Check/>}</div><div style={{fontSize:12,color:C.gray3,marginTop:2}}>{m.desc}</div></div>)}</div><div style={{display:"flex",gap:10}}><Btn onClick={()=>{setKey(apiKeyInput);setModel(selectedModel);setShowSettings(false)}} style={{flex:1}}>Salvar</Btn><Btn variant="ghost" onClick={()=>setShowSettings(false)} style={{border:`1px solid ${C.border}`}}>Cancelar</Btn></div></div></div>;
+  const saveGlobalSettings=async()=>{
+    try{
+      // Upsert API key
+      const existingKey = await supabase._fetch("/rest/v1/app_settings?key=eq.openai_api_key",{method:"GET"});
+      if(Array.isArray(existingKey)&&existingKey.length>0){
+        await supabase._fetch("/rest/v1/app_settings?key=eq.openai_api_key",{method:"PATCH",body:JSON.stringify({value:apiKeyInput,updated_at:new Date().toISOString()}),headers:{"Prefer":"return=representation"}});
+      }else{
+        await supabase._fetch("/rest/v1/app_settings",{method:"POST",body:JSON.stringify({key:"openai_api_key",value:apiKeyInput}),headers:{"Prefer":"return=representation"}});
+      }
+      // Upsert model
+      const existingModel = await supabase._fetch("/rest/v1/app_settings?key=eq.openai_model",{method:"GET"});
+      if(Array.isArray(existingModel)&&existingModel.length>0){
+        await supabase._fetch("/rest/v1/app_settings?key=eq.openai_model",{method:"PATCH",body:JSON.stringify({value:selectedModel,updated_at:new Date().toISOString()}),headers:{"Prefer":"return=representation"}});
+      }else{
+        await supabase._fetch("/rest/v1/app_settings",{method:"POST",body:JSON.stringify({key:"openai_model",value:selectedModel}),headers:{"Prefer":"return=representation"}});
+      }
+      setGlobalApiKey(apiKeyInput);setModel(selectedModel);setShowSettings(false);
+    }catch(e){alert("Erro ao salvar: "+e.message)}
+  };
+
+  const settingsModal=showSettings&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={()=>setShowSettings(false)}><div style={{background:C.bgCard,borderRadius:20,padding:32,width:"100%",maxWidth:520,maxHeight:"85vh",overflow:"auto",border:`1px solid ${C.border}`,boxShadow:C.shadow}} onClick={e=>e.stopPropagation()}><h3 style={{fontFamily:FONT_DISPLAY,fontSize:20,marginBottom:20}}>Configurações</h3>
+    {profile?.is_admin?<>
+      <Input label="API Key da OpenAI (compartilhada com todos)" type="password" placeholder="sk-..." value={apiKeyInput} onChange={e=>setApiKeyInput(e.target.value)}/>
+      <p style={{fontSize:12,color:C.gray4,marginBottom:16,marginTop:-10}}>Esta chave será usada por todos os usuários do sistema.</p>
+      <div style={{marginBottom:18}}><label style={{display:"block",fontSize:14,fontWeight:500,color:C.gray2,marginBottom:8}}>Modelo</label>{MODELS.map(m=><div key={m.id} onClick={()=>setSelectedModel(m.id)} style={{padding:"10px 14px",borderRadius:10,border:`1px solid ${selectedModel===m.id?C.green:C.border}`,background:selectedModel===m.id?C.bgInput:"transparent",marginBottom:6,cursor:"pointer",transition:"all 0.2s"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:14,fontWeight:600,color:selectedModel===m.id?C.white:C.gray2}}>{m.name}</span>{selectedModel===m.id&&<Icon.Check/>}</div><div style={{fontSize:12,color:C.gray3,marginTop:2}}>{m.desc}</div></div>)}</div>
+      <div style={{display:"flex",gap:10}}><Btn onClick={saveGlobalSettings} style={{flex:1}}>Salvar para todos</Btn><Btn variant="ghost" onClick={()=>setShowSettings(false)} style={{border:`1px solid ${C.border}`}}>Cancelar</Btn></div>
+    </>:<>
+      <div style={{padding:"16px",background:C.bgInput,borderRadius:10,border:`1px solid ${C.border}`}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><Icon.Check/><span style={{color:C.green,fontWeight:600}}>IA Configurada</span></div>
+        <p style={{fontSize:14,color:C.gray2}}>Modelo: <strong style={{color:C.white}}>{MODELS.find(m=>m.id===getModel())?.name||getModel()}</strong></p>
+        <p style={{fontSize:12,color:C.gray4,marginTop:8}}>As configurações são gerenciadas pelo administrador.</p>
+      </div>
+      <div style={{marginTop:16}}><Btn variant="ghost" onClick={()=>setShowSettings(false)} style={{width:"100%",border:`1px solid ${C.border}`}}>Fechar</Btn></div>
+    </>}
+  </div></div>;
 
   const promptModal=showPromptEditor&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={()=>setShowPromptEditor(false)}><div style={{background:C.bgCard,borderRadius:20,padding:32,width:"100%",maxWidth:700,maxHeight:"85vh",overflow:"auto",border:`1px solid ${C.border}`,boxShadow:C.shadow}} onClick={e=>e.stopPropagation()}><h3 style={{fontFamily:FONT_DISPLAY,fontSize:20,marginBottom:8}}>Editor de Prompt</h3><p style={{fontSize:13,color:C.gray3,marginBottom:16}}>Variáveis: {"{{user_name}}, {{user_age}}, {{user_role}}, {{user_personality}}, {{target_age}}, {{target_role}}, {{target_personality}}, {{situation_context}}"}</p><textarea value={promptText} onChange={e=>setPromptText(e.target.value)} style={{width:"100%",minHeight:350,padding:14,borderRadius:10,border:`1px solid ${C.border}`,background:C.bgInput,color:C.white,fontSize:14,fontFamily:"monospace",lineHeight:1.6,resize:"vertical",outline:"none",boxSizing:"border-box"}}/><div style={{display:"flex",gap:10,marginTop:16}}><Btn onClick={savePrompt} style={{flex:1}}>{promptSaved?<><Icon.Check/> Salvo!</>:"Salvar"}</Btn><Btn variant="ghost" onClick={resetPrompt} style={{border:`1px solid ${C.border}`}}>Restaurar padrão</Btn><Btn variant="ghost" onClick={()=>setShowPromptEditor(false)} style={{border:`1px solid ${C.border}`}}>Fechar</Btn></div></div></div>;
 
