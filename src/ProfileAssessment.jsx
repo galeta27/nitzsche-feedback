@@ -41,7 +41,7 @@ const QUESTIONS = [
   },
   {
     block: "Superfície Observável",
-    title: "Essa pessoa tende a:",
+    title: "Na execuçao de seu trabalho essa pessoa tende a:",
     maxSelect: 2,
     options: [
       { id: "4a", text: "Trabalhar com rapidez e senso de urgência", func: "ritmo rápido" },
