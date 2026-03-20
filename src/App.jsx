@@ -170,12 +170,17 @@ Use essas informações para personalizar a experiência. Se algum campo estiver
 
   const saveProfile=async()=>{
     try{
-      await supabase.from("profiles").eq("id",profile.id).update({
-        full_name:profileForm.full_name,
-        age:profileForm.age?parseInt(profileForm.age):null,
-        role:profileForm.role,
-        personality:profileForm.personality
-      }).execute();
+      const uid = profile.id;
+      await supabase._fetch(`/rest/v1/profiles?id=eq.${uid}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          full_name:profileForm.full_name,
+          age:profileForm.age?parseInt(profileForm.age):null,
+          role:profileForm.role,
+          personality:profileForm.personality
+        }),
+        headers: { "Prefer": "return=representation" }
+      });
       setProfile(p=>({...p,...profileForm,age:profileForm.age?parseInt(profileForm.age):null}));
       setProfileSaved(true);setTimeout(()=>setProfileSaved(false),2000);
     }catch(e){alert("Erro ao salvar perfil: "+e.message)}
