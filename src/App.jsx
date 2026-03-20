@@ -191,7 +191,7 @@ ${conv.target_profile.personality||"não informado"}`;
     if(conv?.situation_context){
       prompt += `\n\nCONTEXTO/SITUAÇÃO DESCRITA PELO USUÁRIO:\n${conv.situation_context}`;
     }
-    prompt += `\n\nIMPORTANTE: Use TODOS os dados acima (perfis e contexto) para personalizar completamente a experiência de treinamento. Esses dados já foram coletados — não pergunte novamente. Comece diretamente o treinamento considerando esses perfis e a situação.`;
+    prompt += `\n\nINSTRUÇÃO SOBRE OS DADOS ACIMA: Esses perfis e o contexto/situação são a base para você construir a história interativa e conduzir o treinamento de feedback conforme suas instruções principais. Use esses dados para personalizar os personagens, as situações e as orientações. Não pergunte novamente o que já foi informado acima.`;
     return prompt;
   };
 
@@ -218,8 +218,8 @@ ${conv.target_profile.personality||"não informado"}`;
     setIsLoading(true);
     const hasStory = conv.situation_context?.includes("história criada pela IA");
     const firstMsg = hasStory
-      ? "Olá! Gostaria de treinar feedback através de uma história interativa. Use o perfil da pessoa que vai receber o feedback para criar uma situação realista onde eu precise dar feedback a alguém com esse perfil."
-      : `Olá! Quero treinar como dar feedback para essa situação que descrevi. Considere o perfil da pessoa que vai receber e me ajude a construir a melhor abordagem.`;
+      ? "Olá! Gostaria de começar um treinamento de feedback. Prefiro fazer isso através de uma história."
+      : "Olá! Gostaria de começar um treinamento de feedback. Já descrevi a situação.";
     try{
       const r=await callAI(globalApiKey,[{role:"user",content:firstMsg}],getSysPrompt(conv));
       const m={conversation_id:conv.id,role:"assistant",content:r.text,input_tokens:r.inputTokens,output_tokens:r.outputTokens,cache_read_tokens:r.cacheReadTokens};
