@@ -182,9 +182,13 @@ export default function NitzscheApp() {
     const conv = conversations.find(c=>c.id===activeConvId);
     if(conv?.target_profile?.role || conv?.target_profile?.personality){
       prompt += `\n\nPERFIL DO RECEPTOR DO FEEDBACK (já coletado, não pergunte novamente):
+- Nome: ${conv.target_profile.name||"não informado"}
 - Idade: ${conv.target_profile.age||"não informada"}
 - Cargo: ${conv.target_profile.role||"não informado"}
 - Perfil de personalidade: ${conv.target_profile.personality||"não informado"}`;
+    }
+    if(conv?.situation_context){
+      prompt += `\n\nCONTEXTO/SITUAÇÃO:\n${conv.situation_context}`;
     }
     prompt += `\nUse essas informações para personalizar a experiência. Se algum campo estiver como "não informado", você pode perguntar naturalmente.`;
     return prompt;
@@ -284,7 +288,8 @@ export default function NitzscheApp() {
       Font={FONT}
       onCancel={()=>setOnboardStep(0)}
       onComplete={async(target)=>{
-        const conv=await saveConversation({user_id:profile.id,title:`Feedback → ${target.role||"Colaborador"}`,user_profile:{name:profile.full_name,age:profile.age,role:profile.role,personality:profile.personality},target_profile:target,situation_context:""});
+        const title = target.name ? `Feedback → ${target.name} (${target.role})` : `Feedback → ${target.role||"Colaborador"}`;
+        const conv=await saveConversation({user_id:profile.id,title,user_profile:{name:profile.full_name,age:profile.age,role:profile.role,personality:profile.personality},target_profile:{age:target.age,role:target.role,name:target.name,personality:target.personality},situation_context:target.situation||""});
         if(conv){setConversations(p=>[conv,...p]);setActiveConvId(conv.id);setOnboardStep(0);setMessages([]);sendInitial(conv)}
       }}
     />
