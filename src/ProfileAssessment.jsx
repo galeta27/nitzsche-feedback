@@ -396,5 +396,3 @@ export default function ProfileAssessment({colors:C,onComplete,onCancel,Font}){
   }
   return null;
 }
-ENDOFFILE
-wc -l /home/claude/PA3.jsx
