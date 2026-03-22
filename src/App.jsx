@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import ProfileAssessment, { profileToText } from "./ProfileAssessment";
+import ProfileAssessment, { profileToText, situationToText } from "./ProfileAssessment";
 
 const SUPABASE_URL = "https://uqstflzxsivifkeqdptk.supabase.co";
 const SUPABASE_KEY = "sb_publishable_wzNezmXh8vHD9yBSbwnPUw_ImplTerw";
