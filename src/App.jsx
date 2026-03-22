@@ -157,6 +157,7 @@ export default function NitzscheApp() {
   const [actionPlanLoading, setActionPlanLoading] = useState(false);
   const [actionChecks, setActionChecks] = useState({});
   const [showProfile, setShowProfile] = useState(false);
+  const [showTargetProfile, setShowTargetProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({full_name:"",age:"",role:"",personality:""});
   const [profileSaved, setProfileSaved] = useState(false);
   const chatEndRef = useRef(null);
@@ -256,15 +257,19 @@ ${conv.target_profile.personality||"não informado"}`;}
 
   const promptModal=showPromptEditor&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={()=>setShowPromptEditor(false)}><div style={{background:C.bgCard,borderRadius:20,padding:32,width:"100%",maxWidth:700,maxHeight:"85vh",overflow:"auto",border:`1px solid ${C.border}`,boxShadow:C.shadow}} onClick={e=>e.stopPropagation()}><h3 style={{fontFamily:FONT_DISPLAY,fontSize:20,marginBottom:8}}>Editor de Prompt</h3><p style={{fontSize:13,color:C.gray3,marginBottom:16}}>Edite o prompt base do treinamento de feedback.</p><textarea value={promptText} onChange={e=>setPromptText(e.target.value)} style={{width:"100%",minHeight:350,padding:14,borderRadius:10,border:`1px solid ${C.border}`,background:C.bgInput,color:C.white,fontSize:14,fontFamily:"monospace",lineHeight:1.6,resize:"vertical",outline:"none",boxSizing:"border-box"}}/><div style={{display:"flex",gap:10,marginTop:16}}><Btn onClick={savePrompt} style={{flex:1}}>{promptSaved?<><Icon.Check/> Salvo!</>:"Salvar"}</Btn><Btn variant="ghost" onClick={resetPrompt} style={{border:`1px solid ${C.border}`}}>Restaurar padrão</Btn><Btn variant="ghost" onClick={()=>setShowPromptEditor(false)} style={{border:`1px solid ${C.border}`}}>Fechar</Btn></div></div></div>;
 
+  const updatePlan=(path,value)=>{setActionPlan(prev=>{const copy=JSON.parse(JSON.stringify(prev));let obj=copy;const parts=path.split(".");for(let i=0;i<parts.length-1;i++){const k=parts[i];if(k.match(/^\d+$/))obj=obj[parseInt(k)];else obj=obj[k]}obj[parts[parts.length-1]]=value;return copy})};
+  const editField=(value,path,opts={})=>{const isLong=opts.long;return<div style={{position:"relative",cursor:"text"}} onClick={e=>{const el=e.currentTarget.querySelector("[contenteditable]");if(el)el.focus()}}><div contentEditable suppressContentEditableWarning style={{fontSize:opts.size||14,color:C.gray1,lineHeight:1.6,outline:"none",minHeight:isLong?60:20,padding:"4px 6px",borderRadius:6,border:`1px solid transparent`,transition:"border-color 0.2s",...(opts.italic?{fontStyle:"italic"}:{})}} onFocus={e=>{e.target.style.borderColor=C.green}} onBlur={e=>{e.target.style.borderColor="transparent";updatePlan(path,e.target.innerText)}} dangerouslySetInnerHTML={{__html:value||"<span style='color:#6B7688'>Clique para editar...</span>"}}></div></div>};
+
   const planModal=showActionPlan&&actionPlan&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={()=>setShowActionPlan(false)}><div style={{background:C.bgCard,borderRadius:20,padding:32,width:"100%",maxWidth:700,maxHeight:"85vh",overflow:"auto",border:`1px solid ${C.border}`,boxShadow:C.shadow}} onClick={e=>e.stopPropagation()}>
     <h3 style={{fontFamily:FONT_DISPLAY,fontSize:22,marginBottom:4}}>{actionPlan.titulo}</h3>
-    <p style={{fontSize:14,color:C.gray2,marginBottom:20,lineHeight:1.6}}>{actionPlan.resumo}</p>
+    <p style={{fontSize:13,color:C.gray3,marginBottom:4}}>Todos os campos são editáveis — clique para ajustar.</p>
+    {editField(actionPlan.resumo,"resumo",{size:14})}
 
-    {actionPlan.preparacao&&<div style={{background:C.bgInput,borderRadius:12,padding:"16px 20px",marginBottom:16,border:`1px solid ${C.border}`}}>
+    {actionPlan.preparacao&&<div style={{background:C.bgInput,borderRadius:12,padding:"16px 20px",marginTop:16,marginBottom:16,border:`1px solid ${C.border}`}}>
       <div style={{fontSize:12,fontWeight:700,color:C.green,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Preparação</div>
-      {actionPlan.preparacao.ambiente&&<div style={{fontSize:14,color:C.gray1,marginBottom:6,lineHeight:1.5}}><strong style={{color:C.gray2}}>Ambiente:</strong> {actionPlan.preparacao.ambiente}</div>}
-      {actionPlan.preparacao.momento&&<div style={{fontSize:14,color:C.gray1,marginBottom:6,lineHeight:1.5}}><strong style={{color:C.gray2}}>Momento:</strong> {actionPlan.preparacao.momento}</div>}
-      {actionPlan.preparacao.mindset&&<div style={{fontSize:14,color:C.gray1,lineHeight:1.5,fontStyle:"italic",padding:"8px 12px",background:C.bgCard,borderRadius:8,borderLeft:`3px solid ${C.green}`,marginTop:8}}>{actionPlan.preparacao.mindset}</div>}
+      <div style={{marginBottom:6}}><strong style={{fontSize:13,color:C.gray2}}>Ambiente:</strong>{editField(actionPlan.preparacao.ambiente,"preparacao.ambiente")}</div>
+      <div style={{marginBottom:6}}><strong style={{fontSize:13,color:C.gray2}}>Momento:</strong>{editField(actionPlan.preparacao.momento,"preparacao.momento")}</div>
+      <div style={{padding:"8px 12px",background:C.bgCard,borderRadius:8,borderLeft:`3px solid ${C.green}`,marginTop:8}}>{editField(actionPlan.preparacao.mindset,"preparacao.mindset",{italic:true})}</div>
     </div>}
 
     {actionPlan.roteiro&&<><div style={{fontSize:12,fontWeight:700,color:C.green,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Roteiro</div>
@@ -272,9 +277,9 @@ ${conv.target_profile.personality||"não informado"}`;}
         <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
           <button onClick={()=>toggleCheck(i)} style={{width:24,height:24,borderRadius:6,border:`2px solid ${actionChecks[i]?C.green:C.gray4}`,background:actionChecks[i]?C.green:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2,transition:"all 0.2s",fontSize:12,color:C.white,fontWeight:700}}>{actionChecks[i]?<Icon.Check/>:<span>{i+1}</span>}</button>
           <div style={{flex:1}}>
-            <div style={{fontSize:15,fontWeight:600,color:actionChecks[i]?C.gray3:C.white,textDecoration:actionChecks[i]?"line-through":"none",marginBottom:4}}>{step.etapa}</div>
-            <div style={{fontSize:14.5,color:C.gray1,lineHeight:1.6,padding:"8px 12px",background:C.bgCard,borderRadius:8,borderLeft:`3px solid ${C.green}`,marginBottom:6,fontStyle:"italic"}}>"{step.fala}"</div>
-            {step.orientacao&&<div style={{fontSize:13,color:C.gray3,lineHeight:1.5}}>{step.orientacao}</div>}
+            {editField(step.etapa,`roteiro.${i}.etapa`,{size:15})}
+            <div style={{padding:"8px 12px",background:C.bgCard,borderRadius:8,borderLeft:`3px solid ${C.green}`,marginBottom:6}}>{editField(step.fala,`roteiro.${i}.fala`,{italic:true,long:true})}</div>
+            {editField(step.orientacao,`roteiro.${i}.orientacao`,{size:13})}
           </div>
         </div>
       </div>)}
@@ -282,25 +287,57 @@ ${conv.target_profile.personality||"não informado"}`;}
 
     {actionPlan.feedforward&&<div style={{background:C.bgInput,borderRadius:12,padding:"16px 20px",marginTop:16,marginBottom:16,border:`1px solid ${C.green}44`}}>
       <div style={{fontSize:12,fontWeight:700,color:C.green,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Feedforward</div>
-      {actionPlan.feedforward.pedido&&<div style={{fontSize:14,color:C.gray1,marginBottom:6,lineHeight:1.5}}><strong style={{color:C.gray2}}>Pedido:</strong> {actionPlan.feedforward.pedido}</div>}
-      {actionPlan.feedforward.compromisso&&<div style={{fontSize:14,color:C.gray1,marginBottom:6,lineHeight:1.5}}><strong style={{color:C.gray2}}>Seu compromisso:</strong> {actionPlan.feedforward.compromisso}</div>}
-      {actionPlan.feedforward.followup&&<div style={{fontSize:14,color:C.gray1,lineHeight:1.5}}><strong style={{color:C.gray2}}>Follow-up:</strong> {actionPlan.feedforward.followup}</div>}
+      <div style={{marginBottom:6}}><strong style={{fontSize:13,color:C.gray2}}>Pedido:</strong>{editField(actionPlan.feedforward.pedido,"feedforward.pedido")}</div>
+      <div style={{marginBottom:6}}><strong style={{fontSize:13,color:C.gray2}}>Seu compromisso:</strong>{editField(actionPlan.feedforward.compromisso,"feedforward.compromisso")}</div>
+      <div><strong style={{fontSize:13,color:C.gray2}}>Follow-up:</strong>{editField(actionPlan.feedforward.followup,"feedforward.followup")}</div>
     </div>}
 
     {actionPlan.perguntas_chave?.length>0&&<div style={{marginBottom:16}}>
       <div style={{fontSize:12,fontWeight:700,color:C.green,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Perguntas-chave para engajar</div>
-      {actionPlan.perguntas_chave.map((p,i)=><div key={i} style={{fontSize:14,color:C.gray1,lineHeight:1.5,marginBottom:4,paddingLeft:12,borderLeft:`2px solid ${C.border}`}}>{p}</div>)}
+      {actionPlan.perguntas_chave.map((p,i)=><div key={i} style={{paddingLeft:12,borderLeft:`2px solid ${C.border}`,marginBottom:4}}>{editField(p,`perguntas_chave.${i}`)}</div>)}
     </div>}
 
     {actionPlan.dicas?.length>0&&<div style={{background:C.bgInput,borderRadius:12,padding:"14px 16px",borderLeft:`3px solid ${C.green}`}}>
       <div style={{fontSize:12,fontWeight:700,color:C.green,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Dicas para a conversa</div>
-      {actionPlan.dicas.map((d,i)=><div key={i} style={{fontSize:14,color:C.gray1,lineHeight:1.5,marginBottom:4}}>• {d}</div>)}
+      {actionPlan.dicas.map((d,i)=><div key={i} style={{marginBottom:4}}>{editField(d,`dicas.${i}`)}</div>)}
     </div>}
 
     <Btn onClick={()=>setShowActionPlan(false)} style={{width:"100%",marginTop:20}}>Fechar</Btn>
   </div></div>;
 
   const profileModal=showProfile&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={()=>setShowProfile(false)}><div style={{background:C.bgCard,borderRadius:20,padding:32,width:"100%",maxWidth:480,border:`1px solid ${C.border}`,boxShadow:C.shadow}} onClick={e=>e.stopPropagation()}><h3 style={{fontFamily:FONT_DISPLAY,fontSize:20,marginBottom:4}}>Meu Perfil</h3><p style={{fontSize:13,color:C.gray3,marginBottom:20}}>Preencha uma vez. A IA usará esses dados em todas as suas conversas.</p><Input label="Nome completo" placeholder="Seu nome" value={profileForm.full_name} onChange={e=>setProfileForm(p=>({...p,full_name:e.target.value}))}/><Input label="Idade" type="number" placeholder="Ex: 35" value={profileForm.age} onChange={e=>setProfileForm(p=>({...p,age:e.target.value}))}/><Input label="Cargo" placeholder="Ex: Gerente de Vendas" value={profileForm.role} onChange={e=>setProfileForm(p=>({...p,role:e.target.value}))}/><TextArea label="Perfil de personalidade (DISC / MBTI)" placeholder="Ex: Perfil D (Dominância) no DISC — direto, orientado a resultados, gosta de desafios." value={profileForm.personality} onChange={e=>setProfileForm(p=>({...p,personality:e.target.value}))}/><div style={{display:"flex",gap:10}}><Btn onClick={saveProfile} style={{flex:1}}>{profileSaved?<><Icon.Check/> Salvo!</>:"Salvar perfil"}</Btn><Btn variant="ghost" onClick={()=>setShowProfile(false)} style={{border:`1px solid ${C.border}`}}>Fechar</Btn></div></div></div>;
+
+  const targetProfileModal=(()=>{
+    if(!showTargetProfile||!activeConv?.target_profile) return null;
+    const tp=activeConv.target_profile;
+    const lines=(tp.personality||"").split("\n").filter(Boolean);
+    return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={()=>setShowTargetProfile(false)}>
+      <div style={{background:C.bgCard,borderRadius:20,padding:32,width:"100%",maxWidth:600,maxHeight:"85vh",overflow:"auto",border:`1px solid ${C.border}`,boxShadow:C.shadow}} onClick={e=>e.stopPropagation()}>
+        <h3 style={{fontFamily:FONT_DISPLAY,fontSize:22,marginBottom:4}}>Perfil do Receptor</h3>
+        <p style={{fontSize:14,color:C.gray2,marginBottom:16}}>{tp.name?`${tp.name} — `:""}{tp.role||""}{tp.age?`, ${tp.age} anos`:""}</p>
+        <div style={{background:C.bgInput,borderRadius:12,padding:"16px 20px",border:`1px solid ${C.border}`}}>
+          {lines.map((line,i)=>{
+            const parts=line.split(":");
+            if(parts.length>=2){
+              const label=parts[0].trim();
+              const val=parts.slice(1).join(":").trim();
+              const isHighlight=label.toLowerCase().includes("melhor abordagem");
+              const isDanger=label.toLowerCase().includes("risco");
+              if(isHighlight) return <div key={i} style={{marginTop:10,padding:"8px 12px",background:C.bgCard,borderRadius:8,border:`1px solid ${C.green}33`}}><div style={{fontSize:13,color:C.green,fontWeight:600,marginBottom:2}}>{label}</div><div style={{fontSize:14,color:C.gray1}}>{val}</div></div>;
+              if(isDanger) return <div key={i} style={{marginTop:6,padding:"8px 12px",background:C.bgCard,borderRadius:8,border:"1px solid #D9445233"}}><div style={{fontSize:13,color:"#D94452",fontWeight:600,marginBottom:2}}>{label}</div><div style={{fontSize:14,color:C.gray1}}>{val}</div></div>;
+              return <div key={i} style={{display:"flex",fontSize:14,marginBottom:4}}><span style={{color:C.gray3,minWidth:140}}>{label}:</span><span style={{color:C.gray1}}>{val}</span></div>;
+            }
+            return <div key={i} style={{fontSize:14,color:C.gray1,marginBottom:4,fontWeight:line.includes("PERFIL")||line.includes("CONTEXTO")?700:400,color:line.includes("PERFIL")||line.includes("CONTEXTO")?C.green:C.gray1,marginTop:line.includes("PERFIL")||line.includes("CONTEXTO")?12:0}}>{line}</div>;
+          })}
+        </div>
+        {activeConv.situation_context&&!activeConv.situation_context.includes("história criada")&&<div style={{background:C.bgInput,borderRadius:12,padding:"16px 20px",border:`1px solid ${C.border}`,marginTop:12}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.green,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Situação</div>
+          <div style={{fontSize:14,color:C.gray1,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{activeConv.situation_context}</div>
+        </div>}
+        <Btn onClick={()=>setShowTargetProfile(false)} style={{width:"100%",marginTop:20}}>Fechar</Btn>
+      </div>
+    </div>;
+  })();
 
   // ONBOARDING RECEPTOR
   const renderOnboarding=()=>(<ProfileAssessment colors={C} Font={FONT} onCancel={()=>setOnboardStep(0)}
@@ -316,7 +353,7 @@ ${conv.target_profile.personality||"não informado"}`;}
     <div style={{display:"flex",gap:10,marginTop:10,alignItems:"center",flexWrap:"wrap"}}>{messages.length>=2&&<Btn small onClick={generateActionPlan} disabled={actionPlanLoading} variant="ghost" style={{border:`1px solid ${C.border}`}}>{actionPlanLoading?"Gerando...":<><Icon.Clipboard/> Gerar Plano de Ação</>}</Btn>}{actionPlan&&<Btn small onClick={()=>setShowActionPlan(true)} variant="ghost" style={{border:`1px solid ${C.green}`,color:C.green}}><Icon.Check/> Ver Plano</Btn>}{sessionTokens.input>0&&<span style={{fontSize:11,color:C.gray4,marginLeft:"auto"}}>{sessionTokens.input+sessionTokens.output} tokens · ${sessionTokens.cost.toFixed(4)}</span>}</div></div></div></>};
 
   const activeConv=conversations.find(c=>c.id===activeConvId);
-  return(<div style={{display:"flex",height:"100vh",overflow:"hidden"}}><style>{cssBase}</style>{settingsModal}{promptModal}{planModal}{profileModal}
+  return(<div style={{display:"flex",height:"100vh",overflow:"hidden"}}><style>{cssBase}</style>{settingsModal}{promptModal}{planModal}{profileModal}{targetProfileModal}
     <div style={{width:270,minWidth:270,background:C.bgSurface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",height:"100vh"}}>
       <div style={{padding:"16px 14px 12px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:10}}><Logo size={30}/><span style={{fontFamily:FONT_DISPLAY,fontSize:17,fontWeight:700}}>Nitzsche</span></div>
       <button onClick={startNew} style={{margin:"10px 12px",padding:"10px 14px",borderRadius:10,border:`1px dashed ${C.border}`,background:"transparent",color:C.gray2,fontSize:14,fontFamily:FONT,cursor:"pointer",display:"flex",alignItems:"center",gap:8}}><Icon.Plus/> Novo Treinamento</button>
@@ -333,7 +370,12 @@ ${conv.target_profile.personality||"não informado"}`;}
       </div>
     </div>
     <div style={{flex:1,display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden"}}>
-      <div style={{padding:"12px 22px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",background:C.bgSurface}}><span style={{fontSize:14,fontWeight:500,color:C.gray1}}>{onboardStep>0?"Novo Treinamento":activeConv?activeConv.title:"Feedback Training"}</span>{activeConv&&<span style={{fontSize:11,color:C.gray4}}>{messages.length} msgs</span>}</div>
+      <div style={{padding:"12px 22px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",background:C.bgSurface}}>
+        {onboardStep>0?<span style={{fontSize:14,fontWeight:500,color:C.gray1}}>Novo Treinamento</span>
+        :activeConv?<span onClick={()=>setShowTargetProfile(true)} style={{fontSize:14,fontWeight:500,color:C.gray1,cursor:"pointer",display:"flex",alignItems:"center",gap:6}} title="Clique para ver o perfil do receptor">{activeConv.title} <span style={{fontSize:11,color:C.green}}>▼</span></span>
+        :<span style={{fontSize:14,fontWeight:500,color:C.gray1}}>Feedback Training</span>}
+        {activeConv&&<span style={{fontSize:11,color:C.gray4}}>{messages.length} msgs</span>}
+      </div>
       {onboardStep>0?renderOnboarding():renderChat()}
     </div>
   </div>);
