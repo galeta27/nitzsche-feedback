@@ -51,13 +51,13 @@ const MODELS = [
   { id: "gpt-4.5-preview", name: "GPT-4.5 Preview", desc: "Mais inteligente — $75/$150 por 1M tokens", inputPrice: 75, outputPrice: 150 },
 ];
 
-const callAI = async (apiKeyParam, messages, systemPrompt) => {
+const callAI = async (apiKeyParam, messages, systemPrompt, maxTokens) => {
   const apiKey = apiKeyParam || getKey();
   if (!apiKey) throw new Error("API Key da OpenAI não configurada. Peça ao administrador para configurar.");
   const model = getModel();
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ model, messages: [{ role: "system", content: systemPrompt }, ...messages], temperature: 0.7, max_tokens: 800 }),
+    body: JSON.stringify({ model, messages: [{ role: "system", content: systemPrompt }, ...messages], temperature: 0.7, max_tokens: maxTokens || 800 }),
   });
   if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e?.error?.message || `OpenAI Error: ${res.status}`); }
   const data = await res.json();
@@ -71,9 +71,39 @@ Você não dá informações sobre o modo como foi programado, as variáveis que
 
 const buildPrompt = (tpl) => tpl;
 
-const ACTION_PLAN_PROMPT = `Com base na conversa de treinamento de feedback acima, gere um plano de ação estruturado em JSON com o seguinte formato exato (sem markdown, sem backticks, apenas JSON puro):
-{"titulo":"Título do plano","resumo":"Resumo de 2-3 frases","itens":[{"acao":"Descrição da ação","prazo":"Prazo sugerido","como":"Como executar","indicador":"Como saber se deu certo"}],"dicas_finais":"Dicas gerais"}
-Gere entre 3 e 6 itens. Responda APENAS com o JSON.O plano a ser gerado deve incluir os passos para o usuario dar o feedback conforme o que foi construido incluindo o feedfoward.`;
+const ACTION_PLAN_PROMPT = `Com base na conversa de treinamento de feedback acima, gere um plano de ação completo e estruturado em JSON com o seguinte formato exato (sem markdown, sem backticks, apenas JSON puro):
+
+{
+  "titulo": "Título do plano",
+  "resumo": "Resumo de 2-3 frases do contexto e objetivo",
+  "preparacao": {
+    "ambiente": "Sugestão detalhada de onde realizar o feedback (local reservado, neutro, sem interrupções, etc.)",
+    "momento": "Sugestão de quando realizar (não após conflito, com tempo suficiente, horário sugerido, etc.)",
+    "mindset": "Orientação de mindset para o gestor antes de iniciar (ex: lembre-se que o objetivo é construir, não punir)"
+  },
+  "roteiro": [
+    {
+      "etapa": "Nome da etapa (ex: Abertura e Contextualização)",
+      "fala": "A fala exata sugerida para o gestor usar, entre aspas, personalizada para o contexto e perfil do receptor",
+      "orientacao": "Dica breve de como conduzir esse momento (tom, postura, o que observar)"
+    }
+  ],
+  "feedforward": {
+    "pedido": "Pedido específico, positivo, observável e no presente para a pessoa",
+    "compromisso": "O que o gestor se compromete a fazer em troca",
+    "followup": "Como e quando será feito o acompanhamento (frequência, formato)"
+  },
+  "perguntas_chave": ["Pergunta 1 para engajar durante a conversa", "Pergunta 2", "Pergunta 3"],
+  "dicas": ["Dica 1 sobre tom e postura", "Dica 2", "Dica 3"]
+}
+
+REGRAS:
+- O roteiro deve ter entre 5 e 8 etapas, seguindo a sequência: abertura, observação neutra (SBI), convite ao diálogo, exploração das causas, reforço de responsabilidade, plano de ação e autonomia, compromisso e acompanhamento, fechamento positivo.
+- As falas devem ser PERSONALIZADAS para o perfil comportamental do receptor (DISC) e para a situação descrita.
+- Use linguagem natural, como se o gestor fosse realmente falar aquilo.
+- O feedforward deve ser concreto e acionável.
+- Gere entre 3 e 5 perguntas-chave e entre 3 e 5 dicas.
+- Responda APENAS com o JSON, nada mais.`;
 
 const Icon = {
   Send:()=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>,
@@ -134,18 +164,7 @@ export default function NitzscheApp() {
   useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:"smooth"})},[messages,isLoading]);
   useEffect(()=>{if(authState==="authenticated"){loadProfile();loadGlobalSettings()}},[authState]);
   useEffect(()=>{if(profile){loadConversations();setProfileForm({full_name:profile.full_name||"",age:profile.age||"",role:profile.role||"",personality:profile.personality||""})}},[profile]);
-
-  const loadGlobalSettings=async()=>{
-    try{
-      const data=await supabase.from("app_settings").select().execute();
-      if(Array.isArray(data)){
-        const keyRow=data.find(r=>r.key==="openai_api_key");
-        const modelRow=data.find(r=>r.key==="openai_model");
-        if(keyRow){setGlobalApiKey(keyRow.value);setApiKeyInput(keyRow.value)}
-        if(modelRow){setSelectedModel(modelRow.value);setModel(modelRow.value)}
-      }
-    }catch{}
-  };
+  const loadGlobalSettings=async()=>{try{const data=await supabase.from("app_settings").select().execute();if(Array.isArray(data)){const keyRow=data.find(r=>r.key==="openai_api_key");const modelRow=data.find(r=>r.key==="openai_model");if(keyRow){setGlobalApiKey(keyRow.value);setApiKeyInput(keyRow.value)}if(modelRow){setSelectedModel(modelRow.value);setModel(modelRow.value)}}}catch{}};
   useEffect(()=>{if(activeConvId)loadMessages(activeConvId);else setMessages([])},[activeConvId]);
   useEffect(()=>{const s=localStorage.getItem("nitzsche_prompt");if(s)setPromptText(s)},[]);
 
@@ -164,10 +183,7 @@ export default function NitzscheApp() {
   const saveConversation=async(d)=>{try{const r=await supabase.from("conversations").insert(d).execute();return r[0]}catch(e){console.error(e);return null}};
   const saveMessage=async(d)=>{try{await supabase.from("messages").insert(d).execute()}catch(e){console.error(e)}};
 
-  const startNew=()=>{
-    setOnboardStep(1);setActiveConvId(null);setMessages([]);
-    setSessionTokens({input:0,output:0,cached:0,cost:0});setActionPlan(null);setActionChecks({});
-  };
+  const startNew=()=>{setOnboardStep(1);setActiveConvId(null);setMessages([]);setSessionTokens({input:0,output:0,cached:0,cost:0});setActionPlan(null);setActionChecks({})};
   const resumeConv=(conv)=>{setActiveConvId(conv.id);setOnboardStep(0);setActionPlan(null);setActionChecks({})};
 
   const getSysPrompt=(convOverride)=>{
@@ -177,8 +193,7 @@ export default function NitzscheApp() {
 - Nome: ${profile.full_name||"não informado"}
 - Idade: ${profile.age||"não informada"}
 - Cargo: ${profile.role||"não informado"}
-- Perfil de personalidade: ${profile.personality||"não informado"}`;
-    }
+- Perfil de personalidade: ${profile.personality||"não informado"}`;}
     const conv = convOverride || conversations.find(c=>c.id===activeConvId);
     if(conv?.target_profile?.role || conv?.target_profile?.personality){
       prompt += `\n\nPERFIL DA PESSOA QUE VAI RECEBER O FEEDBACK (já coletado via questionário, não pergunte novamente):
@@ -186,53 +201,26 @@ export default function NitzscheApp() {
 - Idade: ${conv.target_profile.age||"não informada"}
 - Cargo: ${conv.target_profile.role||"não informado"}
 - Perfil comportamental detalhado:
-${conv.target_profile.personality||"não informado"}`;
-    }
-    if(conv?.situation_context){
-      prompt += `\n\nCONTEXTO/SITUAÇÃO DESCRITA PELO USUÁRIO:\n${conv.situation_context}`;
-    }
+${conv.target_profile.personality||"não informado"}`;}
+    if(conv?.situation_context){prompt += `\n\nCONTEXTO/SITUAÇÃO DESCRITA PELO USUÁRIO:\n${conv.situation_context}`;}
     prompt += `\n\nINSTRUÇÃO SOBRE OS DADOS ACIMA: Esses perfis e o contexto/situação são a base para você construir a história interativa e conduzir o treinamento de feedback conforme suas instruções principais. Use esses dados para personalizar os personagens, as situações e as orientações. Não pergunte novamente o que já foi informado acima.`;
     return prompt;
   };
 
-  const saveProfile=async()=>{
-    try{
-      const uid = profile.id;
-      await supabase._fetch(`/rest/v1/profiles?id=eq.${uid}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          full_name:profileForm.full_name,
-          age:profileForm.age?parseInt(profileForm.age):null,
-          role:profileForm.role,
-          personality:profileForm.personality
-        }),
-        headers: { "Prefer": "return=representation" }
-      });
-      setProfile(p=>({...p,...profileForm,age:profileForm.age?parseInt(profileForm.age):null}));
-      setProfileSaved(true);setTimeout(()=>setProfileSaved(false),2000);
-    }catch(e){alert("Erro ao salvar perfil: "+e.message)}
-  };
+  const saveProfile=async()=>{try{const uid=profile.id;await supabase._fetch(`/rest/v1/profiles?id=eq.${uid}`,{method:"PATCH",body:JSON.stringify({full_name:profileForm.full_name,age:profileForm.age?parseInt(profileForm.age):null,role:profileForm.role,personality:profileForm.personality}),headers:{"Prefer":"return=representation"}});setProfile(p=>({...p,...profileForm,age:profileForm.age?parseInt(profileForm.age):null}));setProfileSaved(true);setTimeout(()=>setProfileSaved(false),2000)}catch(e){alert("Erro ao salvar perfil: "+e.message)}};
   const updateTokens=(r)=>{const m=MODELS.find(x=>x.id===getModel())||MODELS[0];setSessionTokens(p=>({input:p.input+r.inputTokens,output:p.output+r.outputTokens,cached:p.cached+r.cacheReadTokens,cost:p.cost+(r.inputTokens*m.inputPrice+r.outputTokens*m.outputPrice)/1000000}))};
 
   const sendInitial=async(conv)=>{
     setIsLoading(true);
-    const hasStory = conv.situation_context?.includes("história criada pela IA");
-    const firstMsg = hasStory
-      ? "Olá! Gostaria de começar um treinamento de feedback. Prefiro fazer isso através de uma história."
-      : "Olá! Gostaria de começar um treinamento de feedback. Já descrevi a situação.";
-    try{
-      const r=await callAI(globalApiKey,[{role:"user",content:firstMsg}],getSysPrompt(conv));
-      const m={conversation_id:conv.id,role:"assistant",content:r.text,input_tokens:r.inputTokens,output_tokens:r.outputTokens,cache_read_tokens:r.cacheReadTokens};
-      await saveMessage(m);setMessages([{...m,created_at:new Date().toISOString()}]);updateTokens(r);
-    }catch(e){setMessages([{role:"assistant",content:`Erro: ${e.message}`,created_at:new Date().toISOString()}])}
-    setIsLoading(false);
-  };
+    const hasStory=conv.situation_context?.includes("história criada pela IA");
+    const firstMsg=hasStory?"Olá! Gostaria de começar um treinamento de feedback. Prefiro fazer isso através de uma história.":"Olá! Gostaria de começar um treinamento de feedback. Já descrevi a situação.";
+    try{const r=await callAI(globalApiKey,[{role:"user",content:firstMsg}],getSysPrompt(conv));const m={conversation_id:conv.id,role:"assistant",content:r.text,input_tokens:r.inputTokens,output_tokens:r.outputTokens,cache_read_tokens:r.cacheReadTokens};await saveMessage(m);setMessages([{...m,created_at:new Date().toISOString()}]);updateTokens(r)}catch(e){setMessages([{role:"assistant",content:`Erro: ${e.message}`,created_at:new Date().toISOString()}])}
+    setIsLoading(false);};
 
   const sendMessage=async()=>{if(!chatInput.trim()||isLoading||!activeConvId)return;const text=chatInput.trim();setChatInput("");const um={conversation_id:activeConvId,role:"user",content:text,input_tokens:0,output_tokens:0};await saveMessage(um);const nm=[...messages,{...um,created_at:new Date().toISOString()}];setMessages(nm);setIsLoading(true);try{const r=await callAI(globalApiKey,nm.map(m=>({role:m.role,content:m.content})),getSysPrompt());const am={conversation_id:activeConvId,role:"assistant",content:r.text,input_tokens:r.inputTokens,output_tokens:r.outputTokens,cache_read_tokens:r.cacheReadTokens};await saveMessage(am);setMessages(p=>[...p,{...am,created_at:new Date().toISOString()}]);updateTokens(r)}catch(e){setMessages(p=>[...p,{role:"assistant",content:`Erro: ${e.message}`,created_at:new Date().toISOString()}])}setIsLoading(false)};
 
-  const generateActionPlan=async()=>{if(!activeConvId||messages.length<2)return;setActionPlanLoading(true);try{const hist=messages.map(m=>({role:m.role,content:m.content}));hist.push({role:"user",content:ACTION_PLAN_PROMPT});const r=await callAI(globalApiKey,hist,getSysPrompt());const parsed=JSON.parse(r.text.replace(/```json?|```/g,"").trim());setActionPlan(parsed);setActionChecks({});setShowActionPlan(true);updateTokens(r)}catch(e){alert("Erro ao gerar plano: "+e.message)}setActionPlanLoading(false)};
+  const generateActionPlan=async()=>{if(!activeConvId||messages.length<2)return;setActionPlanLoading(true);try{const hist=messages.map(m=>({role:m.role,content:m.content}));hist.push({role:"user",content:ACTION_PLAN_PROMPT});const r=await callAI(globalApiKey,hist,getSysPrompt(),2500);const parsed=JSON.parse(r.text.replace(/```json?|```/g,"").trim());setActionPlan(parsed);setActionChecks({});setShowActionPlan(true);updateTokens(r)}catch(e){alert("Erro ao gerar plano: "+e.message)}setActionPlanLoading(false)};
   const toggleCheck=(i)=>setActionChecks(p=>({...p,[i]:!p[i]}));
-
   const savePrompt=()=>{localStorage.setItem("nitzsche_prompt",promptText);setPromptSaved(true);setTimeout(()=>setPromptSaved(false),2000)};
   const resetPrompt=()=>{setPromptText(DEFAULT_PROMPT);localStorage.removeItem("nitzsche_prompt")};
 
@@ -252,61 +240,74 @@ ${conv.target_profile.personality||"não informado"}`;
     </div>);
 
   // MODALS
-  const saveGlobalSettings=async()=>{
-    try{
-      // Upsert API key
-      const existingKey = await supabase._fetch("/rest/v1/app_settings?key=eq.openai_api_key",{method:"GET"});
-      if(Array.isArray(existingKey)&&existingKey.length>0){
-        await supabase._fetch("/rest/v1/app_settings?key=eq.openai_api_key",{method:"PATCH",body:JSON.stringify({value:apiKeyInput,updated_at:new Date().toISOString()}),headers:{"Prefer":"return=representation"}});
-      }else{
-        await supabase._fetch("/rest/v1/app_settings",{method:"POST",body:JSON.stringify({key:"openai_api_key",value:apiKeyInput}),headers:{"Prefer":"return=representation"}});
-      }
-      // Upsert model
-      const existingModel = await supabase._fetch("/rest/v1/app_settings?key=eq.openai_model",{method:"GET"});
-      if(Array.isArray(existingModel)&&existingModel.length>0){
-        await supabase._fetch("/rest/v1/app_settings?key=eq.openai_model",{method:"PATCH",body:JSON.stringify({value:selectedModel,updated_at:new Date().toISOString()}),headers:{"Prefer":"return=representation"}});
-      }else{
-        await supabase._fetch("/rest/v1/app_settings",{method:"POST",body:JSON.stringify({key:"openai_model",value:selectedModel}),headers:{"Prefer":"return=representation"}});
-      }
-      setGlobalApiKey(apiKeyInput);setModel(selectedModel);setShowSettings(false);
-    }catch(e){alert("Erro ao salvar: "+e.message)}
-  };
+  const saveGlobalSettings=async()=>{try{
+    const ek=await supabase._fetch("/rest/v1/app_settings?key=eq.openai_api_key",{method:"GET"});
+    if(Array.isArray(ek)&&ek.length>0){await supabase._fetch("/rest/v1/app_settings?key=eq.openai_api_key",{method:"PATCH",body:JSON.stringify({value:apiKeyInput,updated_at:new Date().toISOString()}),headers:{"Prefer":"return=representation"}})}
+    else{await supabase._fetch("/rest/v1/app_settings",{method:"POST",body:JSON.stringify({key:"openai_api_key",value:apiKeyInput}),headers:{"Prefer":"return=representation"}})}
+    const em=await supabase._fetch("/rest/v1/app_settings?key=eq.openai_model",{method:"GET"});
+    if(Array.isArray(em)&&em.length>0){await supabase._fetch("/rest/v1/app_settings?key=eq.openai_model",{method:"PATCH",body:JSON.stringify({value:selectedModel,updated_at:new Date().toISOString()}),headers:{"Prefer":"return=representation"}})}
+    else{await supabase._fetch("/rest/v1/app_settings",{method:"POST",body:JSON.stringify({key:"openai_model",value:selectedModel}),headers:{"Prefer":"return=representation"}})}
+    setGlobalApiKey(apiKeyInput);setModel(selectedModel);setShowSettings(false)}catch(e){alert("Erro ao salvar: "+e.message)}};
 
   const settingsModal=showSettings&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={()=>setShowSettings(false)}><div style={{background:C.bgCard,borderRadius:20,padding:32,width:"100%",maxWidth:520,maxHeight:"85vh",overflow:"auto",border:`1px solid ${C.border}`,boxShadow:C.shadow}} onClick={e=>e.stopPropagation()}><h3 style={{fontFamily:FONT_DISPLAY,fontSize:20,marginBottom:20}}>Configurações</h3>
-    {profile?.is_admin?<>
-      <Input label="API Key da OpenAI (compartilhada com todos)" type="password" placeholder="sk-..." value={apiKeyInput} onChange={e=>setApiKeyInput(e.target.value)}/>
-      <p style={{fontSize:12,color:C.gray4,marginBottom:16,marginTop:-10}}>Esta chave será usada por todos os usuários do sistema.</p>
-      <div style={{marginBottom:18}}><label style={{display:"block",fontSize:14,fontWeight:500,color:C.gray2,marginBottom:8}}>Modelo</label>{MODELS.map(m=><div key={m.id} onClick={()=>setSelectedModel(m.id)} style={{padding:"10px 14px",borderRadius:10,border:`1px solid ${selectedModel===m.id?C.green:C.border}`,background:selectedModel===m.id?C.bgInput:"transparent",marginBottom:6,cursor:"pointer",transition:"all 0.2s"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:14,fontWeight:600,color:selectedModel===m.id?C.white:C.gray2}}>{m.name}</span>{selectedModel===m.id&&<Icon.Check/>}</div><div style={{fontSize:12,color:C.gray3,marginTop:2}}>{m.desc}</div></div>)}</div>
-      <div style={{display:"flex",gap:10}}><Btn onClick={saveGlobalSettings} style={{flex:1}}>Salvar para todos</Btn><Btn variant="ghost" onClick={()=>setShowSettings(false)} style={{border:`1px solid ${C.border}`}}>Cancelar</Btn></div>
-    </>:<>
-      <div style={{padding:"16px",background:C.bgInput,borderRadius:10,border:`1px solid ${C.border}`}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><Icon.Check/><span style={{color:C.green,fontWeight:600}}>IA Configurada</span></div>
-        <p style={{fontSize:14,color:C.gray2}}>Modelo: <strong style={{color:C.white}}>{MODELS.find(m=>m.id===getModel())?.name||getModel()}</strong></p>
-        <p style={{fontSize:12,color:C.gray4,marginTop:8}}>As configurações são gerenciadas pelo administrador.</p>
-      </div>
-      <div style={{marginTop:16}}><Btn variant="ghost" onClick={()=>setShowSettings(false)} style={{width:"100%",border:`1px solid ${C.border}`}}>Fechar</Btn></div>
-    </>}
+    {profile?.is_admin?<><Input label="API Key da OpenAI (compartilhada com todos)" type="password" placeholder="sk-..." value={apiKeyInput} onChange={e=>setApiKeyInput(e.target.value)}/><p style={{fontSize:12,color:C.gray4,marginBottom:16,marginTop:-10}}>Esta chave será usada por todos os usuários do sistema.</p><div style={{marginBottom:18}}><label style={{display:"block",fontSize:14,fontWeight:500,color:C.gray2,marginBottom:8}}>Modelo</label>{MODELS.map(m=><div key={m.id} onClick={()=>setSelectedModel(m.id)} style={{padding:"10px 14px",borderRadius:10,border:`1px solid ${selectedModel===m.id?C.green:C.border}`,background:selectedModel===m.id?C.bgInput:"transparent",marginBottom:6,cursor:"pointer",transition:"all 0.2s"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:14,fontWeight:600,color:selectedModel===m.id?C.white:C.gray2}}>{m.name}</span>{selectedModel===m.id&&<Icon.Check/>}</div><div style={{fontSize:12,color:C.gray3,marginTop:2}}>{m.desc}</div></div>)}</div><div style={{display:"flex",gap:10}}><Btn onClick={saveGlobalSettings} style={{flex:1}}>Salvar para todos</Btn><Btn variant="ghost" onClick={()=>setShowSettings(false)} style={{border:`1px solid ${C.border}`}}>Cancelar</Btn></div></>
+    :<><div style={{padding:"16px",background:C.bgInput,borderRadius:10,border:`1px solid ${C.border}`}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><Icon.Check/><span style={{color:C.green,fontWeight:600}}>IA Configurada</span></div><p style={{fontSize:14,color:C.gray2}}>Modelo: <strong style={{color:C.white}}>{MODELS.find(m=>m.id===getModel())?.name||getModel()}</strong></p><p style={{fontSize:12,color:C.gray4,marginTop:8}}>As configurações são gerenciadas pelo administrador.</p></div><div style={{marginTop:16}}><Btn variant="ghost" onClick={()=>setShowSettings(false)} style={{width:"100%",border:`1px solid ${C.border}`}}>Fechar</Btn></div></>}
   </div></div>;
 
-  const promptModal=showPromptEditor&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={()=>setShowPromptEditor(false)}><div style={{background:C.bgCard,borderRadius:20,padding:32,width:"100%",maxWidth:700,maxHeight:"85vh",overflow:"auto",border:`1px solid ${C.border}`,boxShadow:C.shadow}} onClick={e=>e.stopPropagation()}><h3 style={{fontFamily:FONT_DISPLAY,fontSize:20,marginBottom:8}}>Editor de Prompt</h3><p style={{fontSize:13,color:C.gray3,marginBottom:16}}>Variáveis: {"{{user_name}}, {{user_age}}, {{user_role}}, {{user_personality}}, {{target_age}}, {{target_role}}, {{target_personality}}, {{situation_context}}"}</p><textarea value={promptText} onChange={e=>setPromptText(e.target.value)} style={{width:"100%",minHeight:350,padding:14,borderRadius:10,border:`1px solid ${C.border}`,background:C.bgInput,color:C.white,fontSize:14,fontFamily:"monospace",lineHeight:1.6,resize:"vertical",outline:"none",boxSizing:"border-box"}}/><div style={{display:"flex",gap:10,marginTop:16}}><Btn onClick={savePrompt} style={{flex:1}}>{promptSaved?<><Icon.Check/> Salvo!</>:"Salvar"}</Btn><Btn variant="ghost" onClick={resetPrompt} style={{border:`1px solid ${C.border}`}}>Restaurar padrão</Btn><Btn variant="ghost" onClick={()=>setShowPromptEditor(false)} style={{border:`1px solid ${C.border}`}}>Fechar</Btn></div></div></div>;
+  const promptModal=showPromptEditor&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={()=>setShowPromptEditor(false)}><div style={{background:C.bgCard,borderRadius:20,padding:32,width:"100%",maxWidth:700,maxHeight:"85vh",overflow:"auto",border:`1px solid ${C.border}`,boxShadow:C.shadow}} onClick={e=>e.stopPropagation()}><h3 style={{fontFamily:FONT_DISPLAY,fontSize:20,marginBottom:8}}>Editor de Prompt</h3><p style={{fontSize:13,color:C.gray3,marginBottom:16}}>Edite o prompt base do treinamento de feedback.</p><textarea value={promptText} onChange={e=>setPromptText(e.target.value)} style={{width:"100%",minHeight:350,padding:14,borderRadius:10,border:`1px solid ${C.border}`,background:C.bgInput,color:C.white,fontSize:14,fontFamily:"monospace",lineHeight:1.6,resize:"vertical",outline:"none",boxSizing:"border-box"}}/><div style={{display:"flex",gap:10,marginTop:16}}><Btn onClick={savePrompt} style={{flex:1}}>{promptSaved?<><Icon.Check/> Salvo!</>:"Salvar"}</Btn><Btn variant="ghost" onClick={resetPrompt} style={{border:`1px solid ${C.border}`}}>Restaurar padrão</Btn><Btn variant="ghost" onClick={()=>setShowPromptEditor(false)} style={{border:`1px solid ${C.border}`}}>Fechar</Btn></div></div></div>;
 
-  const planModal=showActionPlan&&actionPlan&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={()=>setShowActionPlan(false)}><div style={{background:C.bgCard,borderRadius:20,padding:32,width:"100%",maxWidth:640,maxHeight:"85vh",overflow:"auto",border:`1px solid ${C.border}`,boxShadow:C.shadow}} onClick={e=>e.stopPropagation()}><h3 style={{fontFamily:FONT_DISPLAY,fontSize:20,marginBottom:4}}>{actionPlan.titulo}</h3><p style={{fontSize:14,color:C.gray2,marginBottom:20,lineHeight:1.6}}>{actionPlan.resumo}</p>{actionPlan.itens?.map((item,i)=><div key={i} style={{background:C.bgInput,borderRadius:12,padding:"14px 16px",marginBottom:10,border:`1px solid ${actionChecks[i]?C.green:C.border}`,transition:"all 0.2s"}}><div style={{display:"flex",alignItems:"flex-start",gap:10}}><button onClick={()=>toggleCheck(i)} style={{width:22,height:22,borderRadius:6,border:`2px solid ${actionChecks[i]?C.green:C.gray4}`,background:actionChecks[i]?C.green:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2,transition:"all 0.2s"}}>{actionChecks[i]&&<Icon.Check/>}</button><div style={{flex:1}}><div style={{fontSize:16,fontWeight:600,color:actionChecks[i]?C.gray3:C.white,textDecoration:actionChecks[i]?"line-through":"none",marginBottom:4}}>{item.acao}</div><div style={{fontSize:14,color:C.gray3}}><strong style={{color:C.gray2}}>Prazo:</strong> {item.prazo}</div><div style={{fontSize:14,color:C.gray3}}><strong style={{color:C.gray2}}>Como:</strong> {item.como}</div><div style={{fontSize:14,color:C.gray3}}><strong style={{color:C.gray2}}>Indicador:</strong> {item.indicador}</div></div></div></div>)}{actionPlan.dicas_finais&&<div style={{background:C.bgInput,borderRadius:12,padding:"14px 16px",marginTop:12,borderLeft:`3px solid ${C.green}`}}><div style={{fontSize:12,fontWeight:600,color:C.green,textTransform:"uppercase",marginBottom:6}}>Dicas finais</div><div style={{fontSize:14,color:C.gray1,lineHeight:1.6}}>{actionPlan.dicas_finais}</div></div>}<Btn onClick={()=>setShowActionPlan(false)} style={{width:"100%",marginTop:20}}>Fechar</Btn></div></div>;
+  const planModal=showActionPlan&&actionPlan&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={()=>setShowActionPlan(false)}><div style={{background:C.bgCard,borderRadius:20,padding:32,width:"100%",maxWidth:700,maxHeight:"85vh",overflow:"auto",border:`1px solid ${C.border}`,boxShadow:C.shadow}} onClick={e=>e.stopPropagation()}>
+    <h3 style={{fontFamily:FONT_DISPLAY,fontSize:22,marginBottom:4}}>{actionPlan.titulo}</h3>
+    <p style={{fontSize:14,color:C.gray2,marginBottom:20,lineHeight:1.6}}>{actionPlan.resumo}</p>
 
-  const profileModal=showProfile&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={()=>setShowProfile(false)}><div style={{background:C.bgCard,borderRadius:20,padding:32,width:"100%",maxWidth:480,border:`1px solid ${C.border}`,boxShadow:C.shadow}} onClick={e=>e.stopPropagation()}><h3 style={{fontFamily:FONT_DISPLAY,fontSize:20,marginBottom:4}}>Meu Perfil</h3><p style={{fontSize:13,color:C.gray3,marginBottom:20}}>Preencha uma vez. A IA usará esses dados em todas as suas conversas.</p><Input label="Nome completo" placeholder="Seu nome" value={profileForm.full_name} onChange={e=>setProfileForm(p=>({...p,full_name:e.target.value}))}/><Input label="Idade" type="number" placeholder="Ex: 35" value={profileForm.age} onChange={e=>setProfileForm(p=>({...p,age:e.target.value}))}/><Input label="Cargo" placeholder="Ex: Gerente de Vendas" value={profileForm.role} onChange={e=>setProfileForm(p=>({...p,role:e.target.value}))}/><TextArea label="Perfil de personalidade (DISC / MBTI)" placeholder="Ex: Perfil D (Dominância) no DISC — direto, orientado a resultados, gosta de desafios. Ou ENTJ no MBTI — líder natural, estratégico, decisivo." value={profileForm.personality} onChange={e=>setProfileForm(p=>({...p,personality:e.target.value}))}/><div style={{display:"flex",gap:10}}><Btn onClick={saveProfile} style={{flex:1}}>{profileSaved?<><Icon.Check/> Salvo!</>:"Salvar perfil"}</Btn><Btn variant="ghost" onClick={()=>setShowProfile(false)} style={{border:`1px solid ${C.border}`}}>Fechar</Btn></div></div></div>;
+    {actionPlan.preparacao&&<div style={{background:C.bgInput,borderRadius:12,padding:"16px 20px",marginBottom:16,border:`1px solid ${C.border}`}}>
+      <div style={{fontSize:12,fontWeight:700,color:C.green,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Preparação</div>
+      {actionPlan.preparacao.ambiente&&<div style={{fontSize:14,color:C.gray1,marginBottom:6,lineHeight:1.5}}><strong style={{color:C.gray2}}>Ambiente:</strong> {actionPlan.preparacao.ambiente}</div>}
+      {actionPlan.preparacao.momento&&<div style={{fontSize:14,color:C.gray1,marginBottom:6,lineHeight:1.5}}><strong style={{color:C.gray2}}>Momento:</strong> {actionPlan.preparacao.momento}</div>}
+      {actionPlan.preparacao.mindset&&<div style={{fontSize:14,color:C.gray1,lineHeight:1.5,fontStyle:"italic",padding:"8px 12px",background:C.bgCard,borderRadius:8,borderLeft:`3px solid ${C.green}`,marginTop:8}}>{actionPlan.preparacao.mindset}</div>}
+    </div>}
+
+    {actionPlan.roteiro&&<><div style={{fontSize:12,fontWeight:700,color:C.green,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Roteiro</div>
+      {actionPlan.roteiro.map((step,i)=><div key={i} style={{background:C.bgInput,borderRadius:12,padding:"14px 16px",marginBottom:8,border:`1px solid ${actionChecks[i]?C.green:C.border}`,transition:"all 0.2s"}}>
+        <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+          <button onClick={()=>toggleCheck(i)} style={{width:24,height:24,borderRadius:6,border:`2px solid ${actionChecks[i]?C.green:C.gray4}`,background:actionChecks[i]?C.green:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2,transition:"all 0.2s",fontSize:12,color:C.white,fontWeight:700}}>{actionChecks[i]?<Icon.Check/>:<span>{i+1}</span>}</button>
+          <div style={{flex:1}}>
+            <div style={{fontSize:15,fontWeight:600,color:actionChecks[i]?C.gray3:C.white,textDecoration:actionChecks[i]?"line-through":"none",marginBottom:4}}>{step.etapa}</div>
+            <div style={{fontSize:14.5,color:C.gray1,lineHeight:1.6,padding:"8px 12px",background:C.bgCard,borderRadius:8,borderLeft:`3px solid ${C.green}`,marginBottom:6,fontStyle:"italic"}}>"{step.fala}"</div>
+            {step.orientacao&&<div style={{fontSize:13,color:C.gray3,lineHeight:1.5}}>{step.orientacao}</div>}
+          </div>
+        </div>
+      </div>)}
+    </>}
+
+    {actionPlan.feedforward&&<div style={{background:C.bgInput,borderRadius:12,padding:"16px 20px",marginTop:16,marginBottom:16,border:`1px solid ${C.green}44`}}>
+      <div style={{fontSize:12,fontWeight:700,color:C.green,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Feedforward</div>
+      {actionPlan.feedforward.pedido&&<div style={{fontSize:14,color:C.gray1,marginBottom:6,lineHeight:1.5}}><strong style={{color:C.gray2}}>Pedido:</strong> {actionPlan.feedforward.pedido}</div>}
+      {actionPlan.feedforward.compromisso&&<div style={{fontSize:14,color:C.gray1,marginBottom:6,lineHeight:1.5}}><strong style={{color:C.gray2}}>Seu compromisso:</strong> {actionPlan.feedforward.compromisso}</div>}
+      {actionPlan.feedforward.followup&&<div style={{fontSize:14,color:C.gray1,lineHeight:1.5}}><strong style={{color:C.gray2}}>Follow-up:</strong> {actionPlan.feedforward.followup}</div>}
+    </div>}
+
+    {actionPlan.perguntas_chave?.length>0&&<div style={{marginBottom:16}}>
+      <div style={{fontSize:12,fontWeight:700,color:C.green,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Perguntas-chave para engajar</div>
+      {actionPlan.perguntas_chave.map((p,i)=><div key={i} style={{fontSize:14,color:C.gray1,lineHeight:1.5,marginBottom:4,paddingLeft:12,borderLeft:`2px solid ${C.border}`}}>{p}</div>)}
+    </div>}
+
+    {actionPlan.dicas?.length>0&&<div style={{background:C.bgInput,borderRadius:12,padding:"14px 16px",borderLeft:`3px solid ${C.green}`}}>
+      <div style={{fontSize:12,fontWeight:700,color:C.green,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Dicas para a conversa</div>
+      {actionPlan.dicas.map((d,i)=><div key={i} style={{fontSize:14,color:C.gray1,lineHeight:1.5,marginBottom:4}}>• {d}</div>)}
+    </div>}
+
+    <Btn onClick={()=>setShowActionPlan(false)} style={{width:"100%",marginTop:20}}>Fechar</Btn>
+  </div></div>;
+
+  const profileModal=showProfile&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={()=>setShowProfile(false)}><div style={{background:C.bgCard,borderRadius:20,padding:32,width:"100%",maxWidth:480,border:`1px solid ${C.border}`,boxShadow:C.shadow}} onClick={e=>e.stopPropagation()}><h3 style={{fontFamily:FONT_DISPLAY,fontSize:20,marginBottom:4}}>Meu Perfil</h3><p style={{fontSize:13,color:C.gray3,marginBottom:20}}>Preencha uma vez. A IA usará esses dados em todas as suas conversas.</p><Input label="Nome completo" placeholder="Seu nome" value={profileForm.full_name} onChange={e=>setProfileForm(p=>({...p,full_name:e.target.value}))}/><Input label="Idade" type="number" placeholder="Ex: 35" value={profileForm.age} onChange={e=>setProfileForm(p=>({...p,age:e.target.value}))}/><Input label="Cargo" placeholder="Ex: Gerente de Vendas" value={profileForm.role} onChange={e=>setProfileForm(p=>({...p,role:e.target.value}))}/><TextArea label="Perfil de personalidade (DISC / MBTI)" placeholder="Ex: Perfil D (Dominância) no DISC — direto, orientado a resultados, gosta de desafios." value={profileForm.personality} onChange={e=>setProfileForm(p=>({...p,personality:e.target.value}))}/><div style={{display:"flex",gap:10}}><Btn onClick={saveProfile} style={{flex:1}}>{profileSaved?<><Icon.Check/> Salvo!</>:"Salvar perfil"}</Btn><Btn variant="ghost" onClick={()=>setShowProfile(false)} style={{border:`1px solid ${C.border}`}}>Fechar</Btn></div></div></div>;
 
   // ONBOARDING RECEPTOR
-  const renderOnboarding=()=>(
-    <ProfileAssessment
-      colors={C}
-      Font={FONT}
-      onCancel={()=>setOnboardStep(0)}
+  const renderOnboarding=()=>(<ProfileAssessment colors={C} Font={FONT} onCancel={()=>setOnboardStep(0)}
       onComplete={async(target)=>{
-        const title = target.name ? `Feedback → ${target.name} (${target.role})` : `Feedback → ${target.role||"Colaborador"}`;
+        const title=target.name?`Feedback → ${target.name} (${target.role})`:`Feedback → ${target.role||"Colaborador"}`;
         const conv=await saveConversation({user_id:profile.id,title,user_profile:{name:profile.full_name,age:profile.age,role:profile.role,personality:profile.personality},target_profile:{age:target.age,role:target.role,name:target.name,personality:target.personality},situation_context:target.situation||""});
-        if(conv){setConversations(p=>[conv,...p]);setActiveConvId(conv.id);setOnboardStep(0);setMessages([]);sendInitial(conv)}
-      }}
-    />
-  );
+        if(conv){setConversations(p=>[conv,...p]);setActiveConvId(conv.id);setOnboardStep(0);setMessages([]);sendInitial(conv)}}}/>);
 
   // CHAT
   const renderChat=()=>{if(!activeConvId)return<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:40}}><div style={{textAlign:"center",maxWidth:380}} className="fade-in"><Logo size={56}/><h2 style={{fontFamily:FONT_DISPLAY,fontSize:24,marginTop:18,marginBottom:8}}>Feedback Training</h2><p style={{color:C.gray3,fontSize:16,lineHeight:1.6,marginBottom:24}}>Treine suas habilidades de feedback com IA.</p><Btn onClick={startNew} style={{margin:"0 auto"}}><Icon.Plus/> Novo Treinamento</Btn>{!getKey()&&<p style={{color:C.danger,fontSize:13,marginTop:16}}>Configure sua API Key da OpenAI em ⚙️</p>}</div></div>;
