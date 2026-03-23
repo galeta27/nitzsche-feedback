@@ -40,15 +40,16 @@ const FONT_DISPLAY = `'Playfair Display',Georgia,serif`;
 
 const getKey = () => localStorage.getItem("nitzsche_openai_key") || "";
 const setKey = (k) => localStorage.setItem("nitzsche_openai_key", k);
-const getModel = () => localStorage.getItem("nitzsche_model") || "gpt-4o-mini";
+const getModel = () => localStorage.getItem("nitzsche_model") || "gpt-5.4-mini";
 const setModel = (m) => localStorage.setItem("nitzsche_model", m);
 
 const MODELS = [
-  { id: "gpt-4o-mini", name: "GPT-4o Mini", desc: "Rápido e barato — $0.15/$0.60 por 1M tokens", inputPrice: 0.15, outputPrice: 0.6 },
-  { id: "gpt-4o", name: "GPT-4o", desc: "Equilibrado — $2.50/$10 por 1M tokens", inputPrice: 2.5, outputPrice: 10 },
+  { id: "gpt-5.4-mini", name: "GPT-5.4 Mini", desc: "Recomendado — rápido e inteligente — $0.75/$4.50 por 1M tokens", inputPrice: 0.75, outputPrice: 4.5 },
+  { id: "gpt-5.4", name: "GPT-5.4", desc: "Mais avançado — $2.50/$15 por 1M tokens", inputPrice: 2.5, outputPrice: 15 },
   { id: "gpt-4.1-mini", name: "GPT-4.1 Mini", desc: "Rápido, boa qualidade — $0.40/$1.60 por 1M tokens", inputPrice: 0.4, outputPrice: 1.6 },
-  { id: "gpt-4.1", name: "GPT-4.1", desc: "Avançado — $2/$8 por 1M tokens", inputPrice: 2, outputPrice: 8 },
-  { id: "gpt-4.5-preview", name: "GPT-4.5 Preview", desc: "Mais inteligente — $75/$150 por 1M tokens", inputPrice: 75, outputPrice: 150 },
+  { id: "gpt-4.1", name: "GPT-4.1", desc: "Equilibrado — $2/$8 por 1M tokens", inputPrice: 2, outputPrice: 8 },
+  { id: "gpt-4o-mini", name: "GPT-4o Mini", desc: "Econômico — $0.15/$0.60 por 1M tokens", inputPrice: 0.15, outputPrice: 0.6 },
+  { id: "gpt-4o", name: "GPT-4o", desc: "Legado — $2.50/$10 por 1M tokens", inputPrice: 2.5, outputPrice: 10 },
 ];
 
 const callAI = async (apiKeyParam, messages, systemPrompt, maxTokens) => {
@@ -236,7 +237,7 @@ ${conv.target_profile.personality||"não informado"}`;}
   };
 
   const saveProfile=async()=>{try{const uid=profile.id;await supabase._fetch(`/rest/v1/profiles?id=eq.${uid}`,{method:"PATCH",body:JSON.stringify({full_name:profileForm.full_name,age:profileForm.age?parseInt(profileForm.age):null,role:profileForm.role,personality:profileForm.personality}),headers:{"Prefer":"return=representation"}});setProfile(p=>({...p,...profileForm,age:profileForm.age?parseInt(profileForm.age):null}));setProfileSaved(true);setTimeout(()=>setProfileSaved(false),2000)}catch(e){alert("Erro ao salvar perfil: "+e.message)}};
-  const updateTokens=(r)=>{const m=MODELS.find(x=>x.id===getModel())||MODELS[0];const nonCachedInput=r.inputTokens-r.cacheReadTokens;const cachedCost=r.cacheReadTokens*m.inputPrice*0.1/1000000;const nonCachedCost=nonCachedInput*m.inputPrice/1000000;const outputCost=r.outputTokens*m.outputPrice/1000000;setSessionTokens(p=>({input:p.input+r.inputTokens,output:p.output+r.outputTokens,cached:p.cached+r.cacheReadTokens,cost:p.cost+cachedCost+nonCachedCost+outputCost}))};
+  const updateTokens=(r)=>{const m=MODELS.find(x=>x.id===getModel())||MODELS[0];const cachedDiscount=0.5;const nonCachedInput=r.inputTokens-r.cacheReadTokens;const cachedCost=r.cacheReadTokens*m.inputPrice*cachedDiscount/1000000;const nonCachedCost=nonCachedInput*m.inputPrice/1000000;const outputCost=r.outputTokens*m.outputPrice/1000000;setSessionTokens(p=>({input:p.input+r.inputTokens,output:p.output+r.outputTokens,cached:p.cached+r.cacheReadTokens,cost:p.cost+cachedCost+nonCachedCost+outputCost}))};
 
   const sendInitial=async(conv)=>{
     setIsLoading(true);
