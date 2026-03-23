@@ -198,8 +198,8 @@ export default function ProfileAssessment({colors:C,onComplete,onCancel,Font}){
 
   // Pill button for about employee
   const pill=(label,val,setter,options)=>(
-    <div style={{marginBottom:16}}>
-      <label style={lb}>{label}</label>
+    <div style={{marginBottom:18}}>
+      <label style={{display:"block",fontSize:12,fontWeight:700,color:C.green,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>{label}</label>
       <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
         {options.map(o=><button key={o} onClick={()=>setter(o)} style={{padding:"8px 14px",borderRadius:20,border:`1.5px solid ${val===o?C.green:C.border}`,background:val===o?C.bgInput:"transparent",color:val===o?C.white:C.gray2,fontSize:14,fontFamily:Font,cursor:"pointer",transition:"all 0.15s"}}>{o}</button>)}
       </div>
