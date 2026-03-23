@@ -119,11 +119,13 @@ const Icon = {
   Arrow:()=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>,
   Tokens:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v12M6 12h12"/></svg>,
   User:()=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+  Menu:()=><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>,
+  Close:()=><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
 };
 const Logo=({size=36})=><svg width={size} height={size} viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="16" fill={C.bg} stroke={C.border} strokeWidth="2"/><path d="M25 75V25h10l25 35V25h10v50H60L35 40v35z" fill={C.white}/><path d="M50 45l15 20V45h10v30H65L50 55z" fill={C.green} opacity="0.9"/></svg>;
 const Typing=()=>{const[f,setF]=useState(0);useEffect(()=>{const t=setInterval(()=>setF(v=>(v+1)%3),400);return()=>clearInterval(t)},[]);return<div style={{display:"flex",gap:5,padding:"6px 0"}}>{[0,1,2].map(i=><div key={i} style={{width:7,height:7,borderRadius:"50%",background:C.gray3,opacity:i===f?1:0.3,transform:`scale(${i===f?1.2:1})`,transition:"all 0.25s"}}/>)}</div>};
 
-const cssBase=`@import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap');*{margin:0;padding:0;box-sizing:border-box}body{margin:0;background:${C.bg};font-family:${FONT};color:${C.white};font-size:16px;line-height:1.6}::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:${C.border};border-radius:4px}::selection{background:${C.green};color:white}input:focus,textarea:focus{border-color:${C.borderFocus} !important;outline:none}button{font-family:${FONT}}@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}.fade-in{animation:fadeIn 0.3s ease}`;
+const cssBase=`@import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap');*{margin:0;padding:0;box-sizing:border-box}body{margin:0;background:${C.bg};font-family:${FONT};color:${C.white};font-size:16px;line-height:1.6}::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:${C.border};border-radius:4px}::selection{background:${C.green};color:white}input:focus,textarea:focus{border-color:${C.borderFocus} !important;outline:none}button{font-family:${FONT}}@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}.fade-in{animation:fadeIn 0.3s ease}.sidebar{width:270px;min-width:270px}.menu-btn{display:none}@media(max-width:768px){.sidebar{position:fixed;left:-280px;top:0;bottom:0;z-index:500;width:270px;min-width:270px;transition:left 0.3s ease;box-shadow:none}.sidebar.open{left:0;box-shadow:8px 0 32px rgba(0,0,0,0.5)}.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:499}.sidebar-overlay.open{display:block}.menu-btn{display:flex}}`;
 
 const Input=({label,...props})=><div style={{marginBottom:18}}>{label&&<label style={{display:"block",fontSize:14,fontWeight:500,color:C.gray2,marginBottom:6}}>{label}</label>}<input {...props} style={{width:"100%",padding:"11px 14px",borderRadius:10,border:`1px solid ${C.border}`,background:C.bgInput,color:C.white,fontSize:16,fontFamily:FONT,outline:"none",transition:"border-color 0.2s",boxSizing:"border-box",...props.style}}/></div>;
 const TextArea=({label,...props})=><div style={{marginBottom:18}}>{label&&<label style={{display:"block",fontSize:14,fontWeight:500,color:C.gray2,marginBottom:6}}>{label}</label>}<textarea {...props} style={{width:"100%",padding:"11px 14px",borderRadius:10,border:`1px solid ${C.border}`,background:C.bgInput,color:C.white,fontSize:16,fontFamily:FONT,outline:"none",resize:"vertical",minHeight:100,lineHeight:1.5,boxSizing:"border-box",...props.style}}/></div>;
@@ -145,6 +147,7 @@ export default function NitzscheApp() {
   const [isLoading, setIsLoading] = useState(false);
   const [sessionTokens, setSessionTokens] = useState({input:0,output:0,cached:0,cost:0});
   const [onboardStep, setOnboardStep] = useState(0);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [showActionPlan, setShowActionPlan] = useState(false);
@@ -354,10 +357,16 @@ ${conv.target_profile.personality||"não informado"}`;}
 
   const activeConv=conversations.find(c=>c.id===activeConvId);
   return(<div style={{display:"flex",height:"100vh",overflow:"hidden"}}><style>{cssBase}</style>{settingsModal}{promptModal}{planModal}{profileModal}{targetProfileModal}
-    <div style={{width:270,minWidth:270,background:C.bgSurface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",height:"100vh"}}>
-      <div style={{padding:"16px 14px 12px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:10}}><Logo size={30}/><span style={{fontFamily:FONT_DISPLAY,fontSize:17,fontWeight:700}}>Nitzsche</span></div>
-      <button onClick={startNew} style={{margin:"10px 12px",padding:"10px 14px",borderRadius:10,border:`1px dashed ${C.border}`,background:"transparent",color:C.gray2,fontSize:14,fontFamily:FONT,cursor:"pointer",display:"flex",alignItems:"center",gap:8}}><Icon.Plus/> Novo Treinamento</button>
-      <div style={{flex:1,overflowY:"auto",padding:"2px 6px"}}>{conversations.map(conv=><div key={conv.id} onClick={()=>resumeConv(conv)} style={{padding:"9px 10px",borderRadius:8,cursor:"pointer",marginBottom:2,fontSize:13,color:conv.id===activeConvId?C.white:C.gray2,background:conv.id===activeConvId?C.bgCard:"transparent",display:"flex",alignItems:"center",gap:7,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",transition:"all 0.15s"}}><Icon.Chat/><span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{conv.title}</span></div>)}{!conversations.length&&<p style={{fontSize:13,color:C.gray4,textAlign:"center",padding:"36px 14px",lineHeight:1.6}}>Nenhuma conversa ainda.</p>}</div>
+    {/* Mobile overlay */}
+    <div className={`sidebar-overlay${sidebarOpen?" open":""}`} onClick={()=>setSidebarOpen(false)}/>
+    {/* Sidebar */}
+    <div className={`sidebar${sidebarOpen?" open":""}`} style={{background:C.bgSurface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",height:"100vh"}}>
+      <div style={{padding:"16px 14px 12px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}><Logo size={30}/><span style={{fontFamily:FONT_DISPLAY,fontSize:17,fontWeight:700}}>Nitzsche</span></div>
+        <button className="menu-btn" onClick={()=>setSidebarOpen(false)} style={{background:"none",border:"none",color:C.gray2,cursor:"pointer",padding:4}}><Icon.Close/></button>
+      </div>
+      <button onClick={()=>{startNew();setSidebarOpen(false)}} style={{margin:"10px 12px",padding:"10px 14px",borderRadius:10,border:`1px dashed ${C.border}`,background:"transparent",color:C.gray2,fontSize:14,fontFamily:FONT,cursor:"pointer",display:"flex",alignItems:"center",gap:8}}><Icon.Plus/> Novo Treinamento</button>
+      <div style={{flex:1,overflowY:"auto",padding:"2px 6px"}}>{conversations.map(conv=><div key={conv.id} onClick={()=>{resumeConv(conv);setSidebarOpen(false)}} style={{padding:"9px 10px",borderRadius:8,cursor:"pointer",marginBottom:2,fontSize:13,color:conv.id===activeConvId?C.white:C.gray2,background:conv.id===activeConvId?C.bgCard:"transparent",display:"flex",alignItems:"center",gap:7,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",transition:"all 0.15s"}}><Icon.Chat/><span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{conv.title}</span></div>)}{!conversations.length&&<p style={{fontSize:13,color:C.gray4,textAlign:"center",padding:"36px 14px",lineHeight:1.6}}>Nenhuma conversa ainda.</p>}</div>
       <div style={{padding:"8px 12px",borderTop:`1px solid ${C.border}`}}>
         <button onClick={()=>setShowProfile(true)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",color:C.gray2,fontSize:12,fontFamily:FONT,cursor:"pointer",display:"flex",alignItems:"center",gap:6,marginBottom:4}}><Icon.User/> Meu Perfil {profile?.personality?<span style={{marginLeft:"auto",color:C.green,fontSize:10}}>✓</span>:""}</button>
         {profile?.is_admin&&<button onClick={()=>setShowPromptEditor(true)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",color:C.gray2,fontSize:12,fontFamily:FONT,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Icon.Edit/> Editar Prompt</button>}
@@ -371,9 +380,12 @@ ${conv.target_profile.personality||"não informado"}`;}
     </div>
     <div style={{flex:1,display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden"}}>
       <div style={{padding:"12px 22px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",background:C.bgSurface}}>
-        {onboardStep>0?<span style={{fontSize:14,fontWeight:500,color:C.gray1}}>Novo Treinamento</span>
-        :activeConv?<span onClick={()=>setShowTargetProfile(true)} style={{fontSize:14,fontWeight:500,color:C.gray1,cursor:"pointer",display:"flex",alignItems:"center",gap:6}} title="Clique para ver o perfil do receptor">{activeConv.title} <span style={{fontSize:11,color:C.green}}>▼</span></span>
-        :<span style={{fontSize:14,fontWeight:500,color:C.gray1}}>Feedback Training</span>}
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <button className="menu-btn" onClick={()=>setSidebarOpen(true)} style={{background:"none",border:"none",color:C.gray2,cursor:"pointer",padding:4,alignItems:"center",justifyContent:"center"}}><Icon.Menu/></button>
+          {onboardStep>0?<span style={{fontSize:14,fontWeight:500,color:C.gray1}}>Novo Treinamento</span>
+          :activeConv?<span onClick={()=>setShowTargetProfile(true)} style={{fontSize:14,fontWeight:500,color:C.gray1,cursor:"pointer",display:"flex",alignItems:"center",gap:6}} title="Clique para ver o perfil do receptor">{activeConv.title} <span style={{fontSize:11,color:C.green}}>▼</span></span>
+          :<span style={{fontSize:14,fontWeight:500,color:C.gray1}}>Feedback Training</span>}
+        </div>
         {activeConv&&<span style={{fontSize:11,color:C.gray4}}>{messages.length} msgs</span>}
       </div>
       {onboardStep>0?renderOnboarding():renderChat()}
