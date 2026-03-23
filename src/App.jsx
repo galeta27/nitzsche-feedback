@@ -79,9 +79,11 @@ const callAI = async (apiKeyParam, messages, systemPrompt, maxTokens) => {
   const apiKey = apiKeyParam || getKey();
   if (!apiKey) throw new Error("API Key da OpenAI não configurada. Peça ao administrador para configurar.");
   const model = getModel();
+  const useNewParam = model.startsWith("gpt-5") || model.startsWith("o1") || model.startsWith("o3");
+  const tokenParam = useNewParam ? { max_completion_tokens: maxTokens || 800 } : { max_tokens: maxTokens || 800 };
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ model, messages: [{ role: "system", content: systemPrompt }, ...messages], temperature: 0.7, max_tokens: maxTokens || 800 }),
+    body: JSON.stringify({ model, messages: [{ role: "system", content: systemPrompt }, ...messages], temperature: 0.7, ...tokenParam }),
   });
   if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e?.error?.message || `OpenAI Error: ${res.status}`); }
   const data = await res.json();
