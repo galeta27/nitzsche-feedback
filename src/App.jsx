@@ -52,6 +52,29 @@ const MODELS = [
 ];
 
 const callAI = async (apiKeyParam, messages, systemPrompt, maxTokens) => {
+  // Try Edge Function proxy first (secure - API key stays on server)
+  const token = JSON.parse(localStorage.getItem("sb-session")||"{}").access_token;
+  if (token) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/openai-proxy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messages, systemPrompt, maxTokens: maxTokens || 800 }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.text) return data;
+      }
+      const err = await res.json().catch(()=>({}));
+      // If proxy fails with auth error, fall through to direct call
+      if (res.status !== 404) throw new Error(err.error || `Proxy Error: ${res.status}`);
+    } catch (e) {
+      // If edge function not deployed (404), fall back to direct call
+      if (!e.message.includes("404") && !e.message.includes("Failed to fetch")) throw e;
+      console.warn("Edge function not available, using direct API call");
+    }
+  }
+  // Fallback: direct OpenAI call (less secure - for development)
   const apiKey = apiKeyParam || getKey();
   if (!apiKey) throw new Error("API Key da OpenAI não configurada. Peça ao administrador para configurar.");
   const model = getModel();
@@ -213,7 +236,7 @@ ${conv.target_profile.personality||"não informado"}`;}
   };
 
   const saveProfile=async()=>{try{const uid=profile.id;await supabase._fetch(`/rest/v1/profiles?id=eq.${uid}`,{method:"PATCH",body:JSON.stringify({full_name:profileForm.full_name,age:profileForm.age?parseInt(profileForm.age):null,role:profileForm.role,personality:profileForm.personality}),headers:{"Prefer":"return=representation"}});setProfile(p=>({...p,...profileForm,age:profileForm.age?parseInt(profileForm.age):null}));setProfileSaved(true);setTimeout(()=>setProfileSaved(false),2000)}catch(e){alert("Erro ao salvar perfil: "+e.message)}};
-  const updateTokens=(r)=>{const m=MODELS.find(x=>x.id===getModel())||MODELS[0];setSessionTokens(p=>({input:p.input+r.inputTokens,output:p.output+r.outputTokens,cached:p.cached+r.cacheReadTokens,cost:p.cost+(r.inputTokens*m.inputPrice+r.outputTokens*m.outputPrice)/1000000}))};
+  const updateTokens=(r)=>{const m=MODELS.find(x=>x.id===getModel())||MODELS[0];const nonCachedInput=r.inputTokens-r.cacheReadTokens;const cachedCost=r.cacheReadTokens*m.inputPrice*0.1/1000000;const nonCachedCost=nonCachedInput*m.inputPrice/1000000;const outputCost=r.outputTokens*m.outputPrice/1000000;setSessionTokens(p=>({input:p.input+r.inputTokens,output:p.output+r.outputTokens,cached:p.cached+r.cacheReadTokens,cost:p.cost+cachedCost+nonCachedCost+outputCost}))};
 
   const sendInitial=async(conv)=>{
     setIsLoading(true);
@@ -351,7 +374,7 @@ ${conv.target_profile.personality||"não informado"}`;}
         if(conv){setConversations(p=>[conv,...p]);setActiveConvId(conv.id);setOnboardStep(0);setMessages([]);sendInitial(conv)}}}/>);
 
   // CHAT
-  const renderChat=()=>{if(!activeConvId)return<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:40}}><div style={{textAlign:"center",maxWidth:380}} className="fade-in"><Logo size={56}/><h2 style={{fontFamily:FONT_DISPLAY,fontSize:24,marginTop:18,marginBottom:8}}>Feedback Training</h2><p style={{color:C.gray3,fontSize:16,lineHeight:1.6,marginBottom:24}}>Treine suas habilidades de feedback com IA.</p><Btn onClick={startNew} style={{margin:"0 auto"}}><Icon.Plus/> Novo Treinamento</Btn>{!getKey()&&<p style={{color:C.danger,fontSize:13,marginTop:16}}>Configure sua API Key da OpenAI em ⚙️</p>}</div></div>;
+  const renderChat=()=>{if(!activeConvId)return<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:40}}><div style={{textAlign:"center",maxWidth:380}} className="fade-in"><Logo size={56}/><h2 style={{fontFamily:FONT_DISPLAY,fontSize:24,marginTop:18,marginBottom:8}}>Feedback Training</h2><p style={{color:C.gray3,fontSize:16,lineHeight:1.6,marginBottom:24}}>Treine suas habilidades de feedback com IA.</p><Btn onClick={startNew} style={{margin:"0 auto"}}><Icon.Plus/> Novo Treinamento</Btn>{!globalApiKey&&<p style={{color:C.danger,fontSize:13,marginTop:16}}>IA não configurada. Peça ao administrador para configurar em ⚙️</p>}</div></div>;
     return<><div style={{flex:1,overflowY:"auto",padding:"20px 24px"}}><div style={{maxWidth:700,margin:"0 auto"}}>{messages.map((msg,i)=><div key={i} style={{display:"flex",gap:10,marginBottom:18,alignItems:"flex-start"}} className="fade-in"><div style={{width:30,height:30,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0,background:msg.role==="assistant"?`linear-gradient(135deg,${C.green},${C.greenBright})`:C.bgInput,border:msg.role==="user"?`1px solid ${C.border}`:"none",color:C.white}}>{msg.role==="assistant"?"N":(profile?.full_name?.[0]?.toUpperCase()||"U")}</div><div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",color:msg.role==="assistant"?C.green:C.gray3,marginBottom:3}}>{msg.role==="assistant"?"Nitzsche Coach":"Você"}</div><div style={{fontSize:15.5,lineHeight:1.6,color:C.gray1,whiteSpace:"pre-wrap"}}>{msg.content}</div></div></div>)}{isLoading&&<div style={{display:"flex",gap:10,marginBottom:18}}><div style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:C.white}}>N</div><div><div style={{fontSize:11,fontWeight:600,color:C.green,marginBottom:3,textTransform:"uppercase"}}>Nitzsche Coach</div><Typing/></div></div>}<div ref={chatEndRef}/></div></div>
     <div style={{padding:"14px 24px 18px",borderTop:`1px solid ${C.border}`,background:C.bgSurface}}><div style={{maxWidth:700,margin:"0 auto"}}><div style={{display:"flex",gap:10,alignItems:"flex-end"}}><textarea value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}}} placeholder="Digite sua mensagem..." rows={1} style={{flex:1,padding:"11px 14px",borderRadius:12,border:`1px solid ${C.border}`,background:C.bgInput,color:C.white,fontSize:16,fontFamily:FONT,outline:"none",resize:"none",minHeight:42,maxHeight:150,lineHeight:1.5,boxSizing:"border-box"}}/><button onClick={sendMessage} disabled={!chatInput.trim()||isLoading} style={{width:42,height:42,borderRadius:12,border:"none",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:C.white,cursor:chatInput.trim()&&!isLoading?"pointer":"not-allowed",display:"flex",alignItems:"center",justifyContent:"center",opacity:chatInput.trim()&&!isLoading?1:0.4,flexShrink:0}}><Icon.Send/></button></div>
     <div style={{display:"flex",gap:10,marginTop:10,alignItems:"center",flexWrap:"wrap"}}>{messages.length>=2&&<Btn small onClick={generateActionPlan} disabled={actionPlanLoading} variant="ghost" style={{border:`1px solid ${C.border}`}}>{actionPlanLoading?"Gerando...":<><Icon.Clipboard/> Gerar Plano de Ação</>}</Btn>}{actionPlan&&<Btn small onClick={()=>setShowActionPlan(true)} variant="ghost" style={{border:`1px solid ${C.green}`,color:C.green}}><Icon.Check/> Ver Plano</Btn>}{sessionTokens.input>0&&<span style={{fontSize:11,color:C.gray4,marginLeft:"auto"}}>{sessionTokens.input+sessionTokens.output} tokens · ${sessionTokens.cost.toFixed(4)}</span>}</div></div></div></>};
