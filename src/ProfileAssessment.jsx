@@ -172,7 +172,7 @@ export default function ProfileAssessment({colors:C,onComplete,onCancel,Font}){
   };
 
   // Shared styles
-  const card={background:C.bgCard,borderRadius:20,padding:"32px 28px",width:"100%",maxWidth:620,border:`1px solid ${C.border}`,boxShadow:C.shadow,maxHeight:"85vh",overflowY:"auto"};
+  const card={background:C.bgCard,borderRadius:16,padding:"24px 20px",width:"100%",maxWidth:620,border:`1px solid ${C.border}`,boxShadow:C.shadow,maxHeight:"90vh",overflowY:"auto"};
   const bar=<div style={{height:4,background:C.border,borderRadius:4,marginBottom:24}}><div style={{height:4,background:C.green,borderRadius:4,width:`${progress}%`,transition:"width 0.3s"}}/></div>;
   const bp=(dis)=>({flex:1,padding:"12px 22px",borderRadius:10,border:"none",background:dis?C.gray4:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:C.white,fontSize:15,fontWeight:600,fontFamily:Font,cursor:dis?"not-allowed":"pointer",opacity:dis?0.4:1,boxShadow:"0 4px 16px rgba(45,139,78,0.25)"});
   const bg={padding:"12px 22px",borderRadius:10,border:`1px solid ${C.border}`,background:"transparent",color:C.gray2,fontSize:15,fontFamily:Font,cursor:"pointer"};
