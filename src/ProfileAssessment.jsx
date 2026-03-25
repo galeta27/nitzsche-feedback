@@ -120,6 +120,9 @@ export default function ProfileAssessment({colors:C,onComplete,onCancel,Font}){
   const[tName,setTName]=useState("");
   const[tAge,setTAge]=useState("");
   const[tRole,setTRole]=useState("");
+  // Profile path choice
+  const[profilePath,setProfilePath]=useState(null); // "build" or "manual"
+  const[manualProfile,setManualProfile]=useState("");
   // About employee
   const[behavior,setBehavior]=useState("");
   const[commitment,setCommitment]=useState("");
@@ -148,9 +151,9 @@ export default function ProfileAssessment({colors:C,onComplete,onCancel,Font}){
   const[resultProfile,setResultProfile]=useState(null);
   const[expanded,setExpanded]=useState(false);
 
-  const totalPages=13;
-  const stepMap={basic:1,about:2,disc:3,motOpen:8,choice:9,situation:10,impact:11,emotion:12,result:13};
-  const curPage=step==="disc"?3+discPage:stepMap[step]||1;
+  const totalPages=15;
+  const stepMap={basic:1,profileChoice:2,manualProfile:3,about:3,disc:4,motOpen:9,choice:10,situation:11,impact:12,emotion:13,result:14};
+  const curPage=step==="disc"?4+discPage:stepMap[step]||1;
   const progress=(curPage/totalPages)*100;
 
   const toggle=(qi,oid)=>{const mx=QUESTIONS[qi].maxSelect;setAnswers(p=>{const c=p[qi]||[];if(c.includes(oid))return{...p,[qi]:c.filter(x=>x!==oid)};if(c.length>=mx)return p;return{...p,[qi]:[...c,oid]}})};
@@ -158,14 +161,28 @@ export default function ProfileAssessment({colors:C,onComplete,onCancel,Font}){
   const hasAns=(qi)=>(answers[qi]||[]).length>0;
   const toggleImpact=(v)=>setImpacts(p=>p.includes(v)?p.filter(x=>x!==v):[...p,v]);
 
-  const handleFinish=()=>{setResultProfile(calculateProfile(answers,openAnswers));setStep("result")};
+  const handleFinish=()=>{
+    if(profilePath==="build"){setResultProfile(calculateProfile(answers,openAnswers));setStep("result")}
+    else{setStep("result")}
+  };
   const handleConfirm=()=>{
-    const prof=resultProfile;
     const ctx={behavior,commitment,performance,relationship,contextNotes};
     const sit=wantsStory?{wantsStory:true}:{wantsStory:false,facts,causes,frequency,riskLevel,impacts,impactDetails,emotion,intentSelf,intentPerson,intentTeam};
+    let personality;
+    if(profilePath==="build"&&resultProfile){
+      personality=profileToText(resultProfile,ctx);
+    } else {
+      let mp=manualProfile;
+      if(ctx.behavior)mp+=`\nComportamento geral: ${ctx.behavior}`;
+      if(ctx.commitment)mp+=`\nComprometimento: ${ctx.commitment}`;
+      if(ctx.performance)mp+=`\nPerformance: ${ctx.performance}`;
+      if(ctx.relationship)mp+=`\nRelacionamento: ${ctx.relationship}`;
+      if(ctx.contextNotes)mp+=`\nObservações: ${ctx.contextNotes}`;
+      personality=mp;
+    }
     onComplete&&onComplete({
       age:tAge,role:tRole,name:tName,
-      personality:profileToText(prof,ctx),profileData:prof,
+      personality,profileData:resultProfile,
       situation:situationToText(sit),wantsStory,
       employeeContext:ctx,situationData:sit
     });
@@ -216,7 +233,46 @@ export default function ProfileAssessment({colors:C,onComplete,onCancel,Font}){
         {fg("Cargo",<input type="text" placeholder="Ex: Consultor de Vendas" value={tRole} onChange={e=>setTRole(e.target.value)} style={inp}/>)}
         <div style={{display:"flex",gap:10,marginTop:20}}>
           <button onClick={onCancel} style={bg}>Cancelar</button>
-          <button onClick={()=>setStep("about")} disabled={!tAge||!tRole} style={bp(!tAge||!tRole)}>Continuar →</button>
+          <button onClick={()=>setStep("profileChoice")} disabled={!tAge||!tRole} style={bp(!tAge||!tRole)}>Continuar →</button>
+        </div>
+      </div>
+    </div>);
+
+  // ============ TELA 2: PROFILE CHOICE ============
+  if(step==="profileChoice")return(
+    <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:24,overflowY:"auto"}}>
+      <div style={card} className="fade-in">{bar}
+        {hd("Perfil de quem vai receber o feedback")}
+        {sub("Como deseja informar o perfil dessa pessoa?")}
+        <button onClick={()=>{setProfilePath("build");setStep("about")}} style={{...ob(false),padding:"16px 18px",marginBottom:10}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:15,fontWeight:600,color:C.white,marginBottom:4}}>Quero construir o perfil</div>
+            <div style={{fontSize:13,color:C.gray3,lineHeight:1.4}}>Responda algumas perguntas rápidas sobre a pessoa. Leva cerca de 5 minutos.</div>
+          </div>
+        </button>
+        <button onClick={()=>{setProfilePath("manual");setStep("manualProfile")}} style={{...ob(false),padding:"16px 18px"}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:15,fontWeight:600,color:C.white,marginBottom:4}}>Já conheço o perfil</div>
+            <div style={{fontSize:13,color:C.gray3,lineHeight:1.4}}>Descreva o perfil comportamental da pessoa com suas próprias palavras.</div>
+          </div>
+        </button>
+        <div style={{display:"flex",gap:10,marginTop:20}}>
+          <button onClick={()=>setStep("basic")} style={bg}>Voltar</button>
+        </div>
+      </div>
+    </div>);
+
+  // ============ TELA 3 (manual): MANUAL PROFILE ============
+  if(step==="manualProfile")return(
+    <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:24,overflowY:"auto"}}>
+      <div style={card} className="fade-in">{bar}
+        {hd("Descreva o perfil")}
+        {sub("Descreva como essa pessoa se comporta no trabalho: estilo de comunicação, tomada de decisão, reação a pressão, motivadores, pontos fortes e de atenção.")}
+        <textarea value={manualProfile} onChange={e=>setManualProfile(e.target.value)} placeholder="Ex: Perfil DC no DISC — direto, lógico, orientado a resultado. Reage sob pressão cobrando mais da equipe. Motivado por autonomia e metas. Ponto forte: entrega consistente. Ponto de atenção: pode ser ríspido quando contrariado." style={{...inp,minHeight:140,resize:"vertical",lineHeight:1.5}}/>
+        <p style={{fontSize:12,color:C.gray4,marginTop:4}}>{manualProfile.length < 30 ? "Descreva com mais detalhes (mínimo 30 caracteres)" : `${manualProfile.length} caracteres`}</p>
+        <div style={{display:"flex",gap:10,marginTop:20}}>
+          <button onClick={()=>setStep("profileChoice")} style={bg}>Voltar</button>
+          <button onClick={()=>setStep("choice")} disabled={manualProfile.length<30} style={bp(manualProfile.length<30)}>Continuar →</button>
         </div>
       </div>
     </div>);
@@ -230,7 +286,7 @@ export default function ProfileAssessment({colors:C,onComplete,onCancel,Font}){
     {pill("Resultados e performance",performance,setPerformance,["Supera as metas","Atinge as expectativas","Irregular","Abaixo do esperado"])}
     {pill("Relacionamento no serviço",relationship,setRelationship,["Colaborativo com todos","Bom com clientes, reservado com colegas","Tende a ser conflituoso","Mantém bom relacionamento com a gestão"])}
     {fg("Algo mais que queira comentar? (opcional)",<textarea value={contextNotes} onChange={e=>setContextNotes(e.target.value)} placeholder="Ex: É funcionário há 10 anos, tem passado por questões pessoais..." style={ta}/>)}
-  </>,()=>setStep("basic"),()=>{setDiscPage(0);setStep("disc")},!behavior||!commitment||!performance||!relationship);
+  </>,()=>setStep("profileChoice"),()=>{setDiscPage(0);setStep("disc")},!behavior||!commitment||!performance||!relationship);
 
   // ============ TELAS 3-7: DISC (2 per page) ============
   if(step==="disc"){
@@ -288,7 +344,7 @@ export default function ProfileAssessment({colors:C,onComplete,onCancel,Font}){
       <p style={{fontSize:14,color:C.gray1,lineHeight:1.6}}>A IA vai criar uma história personalizada com base no perfil que você construiu. Você poderá fazer escolhas ao longo da narrativa.</p>
     </div>}
     {wantsStory===false&&<p style={{fontSize:14,color:C.gray1,lineHeight:1.6}}>Nas próximas etapas vamos descrever a situação de forma estruturada, seguindo o Ciclo da Comunicação Consciente.</p>}
-  </>,()=>setStep("motOpen"),()=>{if(wantsStory)handleFinish();else setStep("situation")},wantsStory===null);
+  </>,()=>{if(profilePath==="manual")setStep("manualProfile");else setStep("motOpen")},()=>{if(wantsStory)handleFinish();else setStep("situation")},wantsStory===null);
 
   // ============ TELA 10: SITUATION (Observação neutra + causas) ============
   if(step==="situation")return wrap(<>
@@ -337,56 +393,75 @@ export default function ProfileAssessment({colors:C,onComplete,onCancel,Font}){
   </>,()=>setStep("impact"),()=>handleFinish(),!emotion||!intentSelf||!intentPerson||!intentTeam);
 
   // ============ TELA 13: RESULT ============
-  if(step==="result"&&resultProfile){
+  if(step==="result"){
+    const isBuild=profilePath==="build"&&resultProfile;
     const p=resultProfile;
     return(
     <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:24,overflowY:"auto"}}>
       <div style={card} className="fade-in">
-        {hd("Perfil Identificado")}
+        {hd("Resumo antes do treinamento")}
         {sub(`${tName?tName+" — ":""}${tRole}, ${tAge} anos`)}
-        <div style={{background:C.bgInput,borderRadius:12,padding:"16px 20px",border:`1px solid ${C.border}`,marginBottom:12}}>
-          <div style={{marginBottom:10}}>
-            <span style={{fontSize:12,fontWeight:600,color:C.green,textTransform:"uppercase",letterSpacing:"0.06em"}}>Estilo predominante</span>
-            <div style={{fontSize:17,fontWeight:700,color:C.white,marginTop:2}}>{p.discCode} — <span style={{fontWeight:400,color:C.gray1}}>{p.discDescription}</span></div>
+
+        {isBuild?<>
+          <div style={{background:C.bgInput,borderRadius:12,padding:"16px 20px",border:`1px solid ${C.border}`,marginBottom:12}}>
+            <div style={{marginBottom:10}}>
+              <span style={{fontSize:12,fontWeight:600,color:C.green,textTransform:"uppercase",letterSpacing:"0.06em"}}>Estilo predominante</span>
+              <div style={{fontSize:17,fontWeight:700,color:C.white,marginTop:2}}>{p.discCode} — <span style={{fontWeight:400,color:C.gray1}}>{p.discDescription}</span></div>
+            </div>
+            {[["Comunicação",p.comunicacao],["Ritmo",p.ritmo],["Decisão",p.decisao],["Mudanças",p.mudancas],["Motivadores",p.motivators.join(", ")]].map(([l,v],i)=>
+              <div key={i} style={{display:"flex",fontSize:14,marginBottom:4}}><span style={{color:C.gray3,minWidth:110}}>{l}:</span><span style={{color:C.gray1}}>{v}</span></div>)}
+            <div style={{marginTop:10,padding:"8px 12px",background:C.bgCard,borderRadius:8,border:`1px solid ${C.green}33`}}>
+              <div style={{fontSize:13,color:C.green,fontWeight:600,marginBottom:2}}>Melhor abordagem</div>
+              <div style={{fontSize:14,color:C.gray1}}>{p.bestApproach}</div>
+            </div>
+            <div style={{marginTop:6,padding:"8px 12px",background:C.bgCard,borderRadius:8,border:"1px solid #D9445233"}}>
+              <div style={{fontSize:13,color:"#D94452",fontWeight:600,marginBottom:2}}>Risco</div>
+              <div style={{fontSize:14,color:C.gray1}}>{p.risk}</div>
+            </div>
           </div>
-          {[["Comunicação",p.comunicacao],["Ritmo",p.ritmo],["Decisão",p.decisao],["Mudanças",p.mudancas],["Motivadores",p.motivators.join(", ")]].map(([l,v],i)=>
-            <div key={i} style={{display:"flex",fontSize:14,marginBottom:4}}><span style={{color:C.gray3,minWidth:110}}>{l}:</span><span style={{color:C.gray1}}>{v}</span></div>)}
-          <div style={{marginTop:10,padding:"8px 12px",background:C.bgCard,borderRadius:8,border:`1px solid ${C.green}33`}}>
-            <div style={{fontSize:13,color:C.green,fontWeight:600,marginBottom:2}}>Melhor abordagem</div>
-            <div style={{fontSize:14,color:C.gray1}}>{p.bestApproach}</div>
+          <button onClick={()=>setExpanded(!expanded)} style={{background:"none",border:"none",color:C.green,fontSize:13,cursor:"pointer",marginBottom:12,fontFamily:Font}}>
+            {expanded?"▲ Recolher detalhes":"▼ Ver detalhes completos"}
+          </button>
+          {expanded&&<div style={{background:C.bgInput,borderRadius:12,padding:"16px 20px",border:`1px solid ${C.border}`,marginBottom:12}}>
+            <div style={{fontSize:13,fontWeight:600,color:C.green,textTransform:"uppercase",marginBottom:6}}>Como tende a funcionar</div>
+            {[`Sob pressão: ${p.pressao}`,`Processos: ${p.processos}`,`Convívio: ${p.convivio}`,`Feedback: ${p.feedbackRecepcao}`].map((t,i)=><div key={i} style={{fontSize:14,color:C.gray1,marginBottom:3,lineHeight:1.5}}>{t}</div>)}
+            {behavior&&<><div style={{fontSize:13,fontWeight:600,color:C.green,textTransform:"uppercase",marginBottom:6,marginTop:12}}>Contexto do funcionário</div>
+              <div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Comportamento: {behavior}</div>
+              <div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Comprometimento: {commitment}</div>
+              <div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Performance: {performance}</div>
+              <div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Relacionamento: {relationship}</div>
+            </>}
+            {(p.openStrength||p.openChallenge)&&<><div style={{fontSize:13,fontWeight:600,color:C.green,textTransform:"uppercase",marginBottom:6,marginTop:12}}>Observações</div>
+              {p.openStrength&&<div style={{fontSize:14,color:C.gray1,marginBottom:3}}><strong>Faz bem:</strong> {p.openStrength}</div>}
+              {p.openChallenge&&<div style={{fontSize:14,color:C.gray1,marginBottom:3}}><strong>Dificuldade:</strong> {p.openChallenge}</div>}
+            </>}
+          </div>}
+        </>:<>
+          <div style={{background:C.bgInput,borderRadius:12,padding:"16px 20px",border:`1px solid ${C.border}`,marginBottom:12}}>
+            <div style={{fontSize:12,fontWeight:600,color:C.green,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Perfil informado</div>
+            <div style={{fontSize:14,color:C.gray1,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{manualProfile}</div>
           </div>
-          <div style={{marginTop:6,padding:"8px 12px",background:C.bgCard,borderRadius:8,border:"1px solid #D9445233"}}>
-            <div style={{fontSize:13,color:"#D94452",fontWeight:600,marginBottom:2}}>Risco</div>
-            <div style={{fontSize:14,color:C.gray1}}>{p.risk}</div>
-          </div>
-        </div>
-        <button onClick={()=>setExpanded(!expanded)} style={{background:"none",border:"none",color:C.green,fontSize:13,cursor:"pointer",marginBottom:12,fontFamily:Font}}>
-          {expanded?"▲ Recolher detalhes":"▼ Ver detalhes completos"}
-        </button>
-        {expanded&&<div style={{background:C.bgInput,borderRadius:12,padding:"16px 20px",border:`1px solid ${C.border}`,marginBottom:12}}>
-          <div style={{fontSize:13,fontWeight:600,color:C.green,textTransform:"uppercase",marginBottom:6}}>Como tende a funcionar</div>
-          {[`Sob pressão: ${p.pressao}`,`Processos: ${p.processos}`,`Convívio: ${p.convivio}`,`Feedback: ${p.feedbackRecepcao}`].map((t,i)=><div key={i} style={{fontSize:14,color:C.gray1,marginBottom:3,lineHeight:1.5}}>{t}</div>)}
-          {behavior&&<><div style={{fontSize:13,fontWeight:600,color:C.green,textTransform:"uppercase",marginBottom:6,marginTop:12}}>Contexto do funcionário</div>
-            <div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Comportamento: {behavior}</div>
-            <div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Comprometimento: {commitment}</div>
-            <div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Performance: {performance}</div>
-            <div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Relacionamento: {relationship}</div>
-          </>}
-          {(p.openStrength||p.openChallenge)&&<><div style={{fontSize:13,fontWeight:600,color:C.green,textTransform:"uppercase",marginBottom:6,marginTop:12}}>Observações</div>
-            {p.openStrength&&<div style={{fontSize:14,color:C.gray1,marginBottom:3}}><strong>Faz bem:</strong> {p.openStrength}</div>}
-            {p.openChallenge&&<div style={{fontSize:14,color:C.gray1,marginBottom:3}}><strong>Dificuldade:</strong> {p.openChallenge}</div>}
-          </>}
-          {!wantsStory&&facts&&<><div style={{fontSize:13,fontWeight:600,color:C.green,textTransform:"uppercase",marginBottom:6,marginTop:12}}>Situação</div>
-            <div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Fatos: {facts}</div>
-            {causes&&<div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Causas: {causes}</div>}
-            {frequency&&<div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Frequência: {frequency}</div>}
-            {riskLevel&&<div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Risco: {riskLevel}</div>}
-            {emotion&&<div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Emoção: {emotion}</div>}
-            {intentSelf&&<div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Intenção (eu): {intentSelf}</div>}
-            {intentPerson&&<div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Intenção (pessoa): {intentPerson}</div>}
-            {intentTeam&&<div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Intenção (time): {intentTeam}</div>}
-          </>}
+        </>}
+
+        {!wantsStory&&facts&&<div style={{background:C.bgInput,borderRadius:12,padding:"16px 20px",border:`1px solid ${C.border}`,marginBottom:12}}>
+          <div style={{fontSize:12,fontWeight:600,color:C.green,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Situação</div>
+          <div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Fatos: {facts}</div>
+          {causes&&<div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Causas: {causes}</div>}
+          {frequency&&<div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Frequência: {frequency}</div>}
+          {riskLevel&&<div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Risco: {riskLevel}</div>}
+          {emotion&&<div style={{fontSize:14,color:C.gray1,marginBottom:3}}>Emoção: {emotion}</div>}
+          {(intentSelf||intentPerson||intentTeam)&&<div style={{marginTop:6}}>
+            <div style={{fontSize:13,color:C.green,fontWeight:600,marginBottom:4}}>Intenção Tripla</div>
+            {intentSelf&&<div style={{fontSize:14,color:C.gray1,marginBottom:2}}>Para mim: {intentSelf}</div>}
+            {intentPerson&&<div style={{fontSize:14,color:C.gray1,marginBottom:2}}>Para a pessoa: {intentPerson}</div>}
+            {intentTeam&&<div style={{fontSize:14,color:C.gray1,marginBottom:2}}>Para o time: {intentTeam}</div>}
+          </div>}
         </div>}
+
+        {wantsStory&&<div style={{background:C.bgInput,borderRadius:12,padding:"12px 16px",border:`1px solid ${C.green}33`,marginBottom:12}}>
+          <div style={{fontSize:14,color:C.gray1}}>Modo: história interativa criada pela IA</div>
+        </div>}
+
         <div style={{display:"flex",gap:10,marginTop:16}}>
           <button onClick={()=>setStep(wantsStory?"choice":"emotion")} style={bg}>Voltar</button>
           <button onClick={handleConfirm} style={bp(false)}>Iniciar Treinamento →</button>
