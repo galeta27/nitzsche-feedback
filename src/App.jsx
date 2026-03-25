@@ -262,11 +262,11 @@ ${conv.target_profile.personality||"não informado"}`;}
       <div style={{background:C.bgCard,borderRadius:20,padding:"44px 36px",width:"100%",maxWidth:400,border:`1px solid ${C.border}`,boxShadow:C.shadow}} className="fade-in">
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}><Logo size={40}/><div><div style={{fontFamily:FONT_DISPLAY,fontSize:24,fontWeight:700}}>Nitzsche</div><div style={{fontSize:11,color:C.green,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase"}}>Feedback Training</div></div></div>
         <p style={{color:C.gray2,fontSize:14,marginBottom:28,lineHeight:1.6}}>{authMode==="login"?"Entre com seu e-mail e senha.":"Crie sua conta para começar."}</p>
-        <Input label="E-mail" type="email" placeholder="seu@empresa.com" value={authEmail} onChange={e=>setAuthEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAuth()}/>
+        <Input label="E-mail" type="email" placeholder="seu@email.com" value={authEmail} onChange={e=>setAuthEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAuth()}/>
         <Input label="Senha" type="password" placeholder={authMode==="signup"?"Mínimo 6 caracteres":"••••••••"} value={authPassword} onChange={e=>setAuthPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAuth()}/>
         {authError&&<p style={{color:C.danger,fontSize:13,marginBottom:12}}>{authError}</p>}
         <Btn onClick={handleAuth} disabled={authLoading} style={{width:"100%",marginBottom:16}}>{authLoading?"Aguarde...":authMode==="login"?<><Icon.Lock/> Entrar</>:<><Icon.Mail/> Criar conta</>}</Btn>
-        <button onClick={()=>{setAuthMode(authMode==="login"?"signup":"login");setAuthError("")}} style={{background:"none",border:"none",color:C.gray3,fontSize:13,cursor:"pointer",width:"100%",textAlign:"center",lineHeight:1.6}}>{authMode==="login"?<>Não tem conta? <span style={{color:C.green,fontWeight:600}}>Cadastre-se</span></>:<>Já tem conta? <span style={{color:C.green,fontWeight:600}}>Faça login</span></>}</button>
+        <button onClick={()=>{setAuthMode(authMode==="login"?"signup":"login");setAuthError("")}} style={{background:"none",border:"none",color:C.gray3,fontSize:13,cursor:"pointer",width:"100%",textAlign:"center",lineHeight:1.6}}>{authMode==="login"?<>Não tem conta? <span style={{color:C.green,fontWeight:600}}>Contate o consultor</span></>:<>Já tem conta? <span style={{color:C.green,fontWeight:600}}>Faça login</span></>}</button>
       </div>
     </div>);
 
