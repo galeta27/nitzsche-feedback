@@ -196,8 +196,11 @@ const TextArea=({label,...props})=><div style={{marginBottom:18}}>{label&&<label
 const Btn=({children,variant="primary",small,disabled,...props})=>{const p=variant==="primary";return<button disabled={disabled} {...props} style={{padding:small?"8px 16px":"12px 22px",borderRadius:10,border:p?"none":`1px solid ${C.border}`,background:p?`linear-gradient(135deg,${C.green},${C.greenBright})`:"transparent",color:p?C.white:C.gray2,fontSize:small?13:15,fontWeight:600,fontFamily:FONT,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.4:1,transition:"all 0.2s",boxShadow:p?"0 4px 16px rgba(45,139,78,0.25)":"none",display:"flex",alignItems:"center",justifyContent:"center",gap:8,...props.style}}>{children}</button>};
 
 
+const APP_VERSION = "1.0.0";
+
 export default function NitzscheApp() {
   const [authState, setAuthState] = useState(supabase.isAuthenticated()?"authenticated":"login");
+  const [updateAvailable, setUpdateAvailable] = useState(false);
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authError, setAuthError] = useState("");
@@ -266,6 +269,13 @@ export default function NitzscheApp() {
   const loadGlobalSettings=async()=>{try{const data=await supabase.from("app_settings").select().execute();if(Array.isArray(data)){const keyRow=data.find(r=>r.key==="openai_api_key");const modelRow=data.find(r=>r.key==="openai_model");if(keyRow){setGlobalApiKey(keyRow.value);setApiKeyInput(keyRow.value)}if(modelRow){setSelectedModel(modelRow.value);setModel(modelRow.value)}}}catch{}};
   useEffect(()=>{if(activeConvId)loadMessages(activeConvId);else setMessages([])},[activeConvId]);
   useEffect(()=>{const s=localStorage.getItem("nitzsche_prompt");if(s)setPromptText(s)},[]);
+  // Version check every 2 minutes
+  useEffect(()=>{
+    const checkVersion=async()=>{try{const r=await fetch("/version.json?t="+Date.now());const d=await r.json();if(d.version&&d.version!==APP_VERSION)setUpdateAvailable(true)}catch{}};
+    checkVersion();
+    const interval=setInterval(checkVersion,120000);
+    return()=>clearInterval(interval);
+  },[]);
 
   const handleAuth=async()=>{
     if(!authEmail.trim()||!authPassword.trim()){setAuthError("Preencha todos os campos");return}
@@ -509,7 +519,9 @@ ${conv.target_profile.personality||"não informado"}`;}
     <div style={{padding:"14px 24px 18px",borderTop:`1px solid ${C.border}`,background:C.bgSurface}}><div style={{maxWidth:700,margin:"0 auto"}}><div style={{display:"flex",gap:10,alignItems:"flex-end"}}><textarea value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}}} placeholder="Digite sua mensagem..." rows={1} style={{flex:1,padding:"11px 14px",borderRadius:12,border:`1px solid ${C.border}`,background:C.bgInput,color:C.white,fontSize:16,fontFamily:FONT,outline:"none",resize:"none",minHeight:42,maxHeight:150,lineHeight:1.5,boxSizing:"border-box"}}/><button onClick={sendMessage} disabled={!chatInput.trim()||isLoading} style={{width:42,height:42,borderRadius:12,border:"none",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:C.white,cursor:chatInput.trim()&&!isLoading?"pointer":"not-allowed",display:"flex",alignItems:"center",justifyContent:"center",opacity:chatInput.trim()&&!isLoading?1:0.4,flexShrink:0}}><Icon.Send/></button></div>
     <div style={{display:"flex",gap:10,marginTop:10,alignItems:"center",flexWrap:"wrap"}}>{messages.length>=2&&<Btn small onClick={generateActionPlan} disabled={actionPlanLoading} variant="ghost" style={{border:`1px solid ${C.border}`}}>{actionPlanLoading?"Gerando...":<><Icon.Clipboard/> Gerar Plano de Ação</>}</Btn>}{actionPlan&&<Btn small onClick={()=>setShowActionPlan(true)} variant="ghost" style={{border:`1px solid ${C.green}`,color:C.green}}><Icon.Check/> Ver Plano</Btn>}{sessionTokens.input>0&&profile?.is_admin&&<span style={{fontSize:11,color:C.gray4,marginLeft:"auto"}}>{sessionTokens.input+sessionTokens.output} tokens · ${sessionTokens.cost.toFixed(4)}</span>}</div></div></div></>};
 
-  return(<div style={{display:"flex",height:"100vh",overflow:"hidden"}}><style>{cssBase}</style>{settingsModal}{promptModal}{planModal}{profileModal}{targetProfileModal}{feedbackModalEl}
+  return(<div style={{display:"flex",height:"100vh",overflow:"hidden",flexDirection:"column"}}><style>{cssBase}</style>
+    {updateAvailable&&<div onClick={()=>window.location.reload()} style={{background:`linear-gradient(135deg,${C.green},${C.greenBright})`,padding:"8px 16px",textAlign:"center",cursor:"pointer",fontSize:13,fontWeight:600,color:C.white,display:"flex",alignItems:"center",justifyContent:"center",gap:8,flexShrink:0}}>Nova versão disponível — toque para atualizar</div>}
+    <div style={{display:"flex",flex:1,overflow:"hidden"}}>{settingsModal}{promptModal}{planModal}{profileModal}{targetProfileModal}{feedbackModalEl}
     {/* Mobile overlay */}
     <div className={`sidebar-overlay${sidebarOpen?" open":""}`} onClick={()=>setSidebarOpen(false)}/>
     {/* Sidebar */}
@@ -546,5 +558,5 @@ ${conv.target_profile.personality||"não informado"}`;}
       {onboardStep>0?renderOnboarding():renderChat()}
       </>}
     </div>
-  </div>);
+  </div></div>);
 }
