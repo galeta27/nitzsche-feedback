@@ -234,8 +234,33 @@ export default function NitzscheApp() {
   const [feedbackTags, setFeedbackTags] = useState([]);
   const [feedbackComment, setFeedbackComment] = useState("");
   const chatEndRef = useRef(null);
+  const lastAiRef = useRef(null);
+  const prevMsgCount = useRef(0);
+  const wasLoading = useRef(false);
 
-  useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:"smooth"})},[messages,isLoading]);
+  useEffect(()=>{
+    if(isLoading){
+      // While loading, scroll to typing indicator
+      chatEndRef.current?.scrollIntoView({behavior:"smooth"});
+      wasLoading.current = true;
+    } else if(wasLoading.current){
+      // Loading just finished = AI message just arrived
+      wasLoading.current = false;
+      // Wait for DOM to fully render the message content
+      setTimeout(()=>{
+        if(lastAiRef.current){
+          lastAiRef.current.scrollIntoView({behavior:"smooth",block:"start"});
+        }
+      },200);
+    } else if(messages.length > prevMsgCount.current){
+      // User sent a message
+      const lastMsg = messages[messages.length-1];
+      if(lastMsg?.role==="user"){
+        chatEndRef.current?.scrollIntoView({behavior:"smooth"});
+      }
+    }
+    prevMsgCount.current = messages.length;
+  },[messages,isLoading]);
   useEffect(()=>{if(authState==="authenticated"){loadProfile();loadGlobalSettings()}},[authState]);
   useEffect(()=>{if(profile){loadConversations();setProfileForm({full_name:profile.full_name||"",age:profile.age||"",role:profile.role||"",personality:profile.personality||""})}},[profile]);
   const loadGlobalSettings=async()=>{try{const data=await supabase.from("app_settings").select().execute();if(Array.isArray(data)){const keyRow=data.find(r=>r.key==="openai_api_key");const modelRow=data.find(r=>r.key==="openai_model");if(keyRow){setGlobalApiKey(keyRow.value);setApiKeyInput(keyRow.value)}if(modelRow){setSelectedModel(modelRow.value);setModel(modelRow.value)}}}catch{}};
@@ -475,12 +500,12 @@ ${conv.target_profile.personality||"não informado"}`;}
 
   // CHAT
   const renderChat=()=>{if(!activeConvId)return<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:40}}><div style={{textAlign:"center",maxWidth:380}} className="fade-in"><Logo size={56}/><h2 style={{fontFamily:FONT_DISPLAY,fontSize:24,marginTop:18,marginBottom:8}}>Feedback Training</h2><p style={{color:C.gray3,fontSize:16,lineHeight:1.6,marginBottom:24}}>Treine suas habilidades de feedback com IA.</p><Btn onClick={startNew} style={{margin:"0 auto"}}><Icon.Plus/> Novo Treinamento</Btn>{!globalApiKey&&<p style={{color:C.danger,fontSize:13,marginTop:16}}>IA não configurada. Peça ao administrador para configurar em ⚙️</p>}</div></div>;
-    return<><div style={{flex:1,overflowY:"auto",padding:"20px 24px"}}><div style={{maxWidth:700,margin:"0 auto"}}>{messages.map((msg,i)=><div key={i} style={{display:"flex",gap:10,marginBottom:18,alignItems:"flex-start"}} className="fade-in"><div style={{width:30,height:30,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0,background:msg.role==="assistant"?`linear-gradient(135deg,${C.green},${C.greenBright})`:C.bgInput,border:msg.role==="user"?`1px solid ${C.border}`:"none",color:C.white}}>{msg.role==="assistant"?"N":(profile?.full_name?.[0]?.toUpperCase()||"U")}</div><div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",color:msg.role==="assistant"?C.green:C.gray3,marginBottom:3}}>{msg.role==="assistant"?"Nitzsche Coach":"Você"}</div><div style={{fontSize:15.5,lineHeight:1.6,color:C.gray1}}>{msg.role==="assistant"?renderMd(msg.content):<span style={{whiteSpace:"pre-wrap"}}>{msg.content}</span>}</div>
+    return<><div style={{flex:1,overflowY:"auto",padding:"20px 24px"}}><div style={{maxWidth:700,margin:"0 auto"}}>{messages.map((msg,i)=>{const isLastAi=msg.role==="assistant"&&i===messages.length-1;return<div key={i} ref={isLastAi?lastAiRef:null} style={{display:"flex",gap:10,marginBottom:18,alignItems:"flex-start"}} className="fade-in"><div style={{width:30,height:30,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0,background:msg.role==="assistant"?`linear-gradient(135deg,${C.green},${C.greenBright})`:C.bgInput,border:msg.role==="user"?`1px solid ${C.border}`:"none",color:C.white}}>{msg.role==="assistant"?"N":(profile?.full_name?.[0]?.toUpperCase()||"U")}</div><div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",color:msg.role==="assistant"?C.green:C.gray3,marginBottom:3}}>{msg.role==="assistant"?"Nitzsche Coach":"Você"}</div><div style={{fontSize:15.5,lineHeight:1.6,color:C.gray1}}>{msg.role==="assistant"?renderMd(msg.content):<span style={{whiteSpace:"pre-wrap"}}>{msg.content}</span>}</div>
       {msg.role==="assistant"&&<div style={{display:"flex",gap:4,marginTop:6}}>
         <button onClick={()=>handleThumb(i,"positive")} title="Boa resposta" style={{background:"none",border:"none",cursor:msgFeedback[i]?"default":"pointer",color:msgFeedback[i]==="positive"?C.green:C.gray4,opacity:msgFeedback[i]&&msgFeedback[i]!=="positive"?0.3:1,padding:4,borderRadius:6,transition:"all 0.2s"}}><Icon.ThumbUp filled={msgFeedback[i]==="positive"}/></button>
         <button onClick={()=>handleThumb(i,"negative")} title="Pode melhorar" style={{background:"none",border:"none",cursor:msgFeedback[i]?"default":"pointer",color:msgFeedback[i]==="negative"?"#D94452":C.gray4,opacity:msgFeedback[i]&&msgFeedback[i]!=="negative"?0.3:1,padding:4,borderRadius:6,transition:"all 0.2s"}}><Icon.ThumbDown filled={msgFeedback[i]==="negative"}/></button>
       </div>}
-    </div></div>)}{isLoading&&<div style={{display:"flex",gap:10,marginBottom:18}}><div style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:C.white}}>N</div><div><div style={{fontSize:11,fontWeight:600,color:C.green,marginBottom:3,textTransform:"uppercase"}}>Nitzsche Coach</div><Typing/></div></div>}<div ref={chatEndRef}/></div></div>
+    </div></div>})}{isLoading&&<div style={{display:"flex",gap:10,marginBottom:18}}><div style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:C.white}}>N</div><div><div style={{fontSize:11,fontWeight:600,color:C.green,marginBottom:3,textTransform:"uppercase"}}>Nitzsche Coach</div><Typing/></div></div>}<div ref={chatEndRef}/></div></div>
     <div style={{padding:"14px 24px 18px",borderTop:`1px solid ${C.border}`,background:C.bgSurface}}><div style={{maxWidth:700,margin:"0 auto"}}><div style={{display:"flex",gap:10,alignItems:"flex-end"}}><textarea value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}}} placeholder="Digite sua mensagem..." rows={1} style={{flex:1,padding:"11px 14px",borderRadius:12,border:`1px solid ${C.border}`,background:C.bgInput,color:C.white,fontSize:16,fontFamily:FONT,outline:"none",resize:"none",minHeight:42,maxHeight:150,lineHeight:1.5,boxSizing:"border-box"}}/><button onClick={sendMessage} disabled={!chatInput.trim()||isLoading} style={{width:42,height:42,borderRadius:12,border:"none",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:C.white,cursor:chatInput.trim()&&!isLoading?"pointer":"not-allowed",display:"flex",alignItems:"center",justifyContent:"center",opacity:chatInput.trim()&&!isLoading?1:0.4,flexShrink:0}}><Icon.Send/></button></div>
     <div style={{display:"flex",gap:10,marginTop:10,alignItems:"center",flexWrap:"wrap"}}>{messages.length>=2&&<Btn small onClick={generateActionPlan} disabled={actionPlanLoading} variant="ghost" style={{border:`1px solid ${C.border}`}}>{actionPlanLoading?"Gerando...":<><Icon.Clipboard/> Gerar Plano de Ação</>}</Btn>}{actionPlan&&<Btn small onClick={()=>setShowActionPlan(true)} variant="ghost" style={{border:`1px solid ${C.green}`,color:C.green}}><Icon.Check/> Ver Plano</Btn>}{sessionTokens.input>0&&profile?.is_admin&&<span style={{fontSize:11,color:C.gray4,marginLeft:"auto"}}>{sessionTokens.input+sessionTokens.output} tokens · ${sessionTokens.cost.toFixed(4)}</span>}</div></div></div></>};
 
