@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import ProfileAssessment, { profileToText, situationToText } from "./ProfileAssessment";
+import AdminDashboard from "./AdminDashboard";
 
 const SUPABASE_URL = "https://uqstflzxsivifkeqdptk.supabase.co";
 const SUPABASE_KEY = "sb_publishable_wzNezmXh8vHD9yBSbwnPUw_ImplTerw";
@@ -179,6 +180,7 @@ export default function NitzscheApp() {
   useEffect(()=>{if(sidebarOpen){document.body.classList.add("sidebar-open")}else{document.body.classList.remove("sidebar-open")}return()=>document.body.classList.remove("sidebar-open")},[sidebarOpen]);
   const [showSettings, setShowSettings] = useState(false);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
   const [showActionPlan, setShowActionPlan] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [globalApiKey, setGlobalApiKey] = useState("");
@@ -456,7 +458,8 @@ ${conv.target_profile.personality||"não informado"}`;}
       <div style={{flex:1,overflowY:"auto",padding:"2px 6px"}}>{conversations.map(conv=><div key={conv.id} onClick={()=>{resumeConv(conv);setSidebarOpen(false)}} style={{padding:"9px 10px",borderRadius:8,cursor:"pointer",marginBottom:2,fontSize:13,color:conv.id===activeConvId?C.white:C.gray2,background:conv.id===activeConvId?C.bgCard:"transparent",display:"flex",alignItems:"center",gap:7,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",transition:"all 0.15s"}}><Icon.Chat/><span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{conv.title}</span></div>)}{!conversations.length&&<p style={{fontSize:13,color:C.gray4,textAlign:"center",padding:"36px 14px",lineHeight:1.6}}>Nenhuma conversa ainda.</p>}</div>
       <div style={{padding:"8px 12px",borderTop:`1px solid ${C.border}`}}>
         <button onClick={()=>setShowProfile(true)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",color:C.gray2,fontSize:12,fontFamily:FONT,cursor:"pointer",display:"flex",alignItems:"center",gap:6,marginBottom:4}}><Icon.User/> Meu Perfil {profile?.personality?<span style={{marginLeft:"auto",color:C.green,fontSize:10}}>✓</span>:""}</button>
-        {profile?.is_admin&&<button onClick={()=>setShowPromptEditor(true)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",color:C.gray2,fontSize:12,fontFamily:FONT,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Icon.Edit/> Editar Prompt</button>}
+        {profile?.is_admin&&<button onClick={()=>setShowPromptEditor(true)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",color:C.gray2,fontSize:12,fontFamily:FONT,cursor:"pointer",display:"flex",alignItems:"center",gap:6,marginBottom:4}}><Icon.Edit/> Editar Prompt</button>}
+        {profile?.is_admin&&<button onClick={()=>{setShowDashboard(true);setSidebarOpen(false)}} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:`1px solid ${C.green}44`,background:C.bgInput,color:C.green,fontSize:12,fontWeight:600,fontFamily:FONT,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Icon.Clipboard/> Painel Admin</button>}
       </div>
       <div style={{padding:"10px 14px",borderTop:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:8}}>
         <div style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>{profile?.full_name?.[0]?.toUpperCase()||"U"}</div>
@@ -466,6 +469,7 @@ ${conv.target_profile.personality||"não informado"}`;}
       </div>
     </div>
     <div style={{flex:1,display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden"}}>
+      {showDashboard?<AdminDashboard supabase={supabase} colors={C} Font={FONT} onClose={()=>setShowDashboard(false)}/>:<>
       <div style={{padding:"12px 22px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",background:C.bgSurface}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <button className="menu-btn" onClick={()=>setSidebarOpen(true)} style={{background:"none",border:"none",color:C.gray2,cursor:"pointer",padding:4,alignItems:"center",justifyContent:"center"}}><Icon.Menu/></button>
@@ -476,6 +480,7 @@ ${conv.target_profile.personality||"não informado"}`;}
         {activeConv&&<span style={{fontSize:11,color:C.gray4}}>{messages.length} msgs</span>}
       </div>
       {onboardStep>0?renderOnboarding():renderChat()}
+      </>}
     </div>
   </div>);
 }
