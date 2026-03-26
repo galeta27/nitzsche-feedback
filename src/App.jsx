@@ -196,8 +196,6 @@ const TextArea=({label,...props})=><div style={{marginBottom:18}}>{label&&<label
 const Btn=({children,variant="primary",small,disabled,...props})=>{const p=variant==="primary";return<button disabled={disabled} {...props} style={{padding:small?"8px 16px":"12px 22px",borderRadius:10,border:p?"none":`1px solid ${C.border}`,background:p?`linear-gradient(135deg,${C.green},${C.greenBright})`:"transparent",color:p?C.white:C.gray2,fontSize:small?13:15,fontWeight:600,fontFamily:FONT,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.4:1,transition:"all 0.2s",boxShadow:p?"0 4px 16px rgba(45,139,78,0.25)":"none",display:"flex",alignItems:"center",justifyContent:"center",gap:8,...props.style}}>{children}</button>};
 
 
-const APP_VERSION = "1.0.0";
-
 export default function NitzscheApp() {
   const [authState, setAuthState] = useState(supabase.isAuthenticated()?"authenticated":"login");
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -269,11 +267,23 @@ export default function NitzscheApp() {
   const loadGlobalSettings=async()=>{try{const data=await supabase.from("app_settings").select().execute();if(Array.isArray(data)){const keyRow=data.find(r=>r.key==="openai_api_key");const modelRow=data.find(r=>r.key==="openai_model");if(keyRow){setGlobalApiKey(keyRow.value);setApiKeyInput(keyRow.value)}if(modelRow){setSelectedModel(modelRow.value);setModel(modelRow.value)}}}catch{}};
   useEffect(()=>{if(activeConvId)loadMessages(activeConvId);else setMessages([])},[activeConvId]);
   useEffect(()=>{const s=localStorage.getItem("nitzsche_prompt");if(s)setPromptText(s)},[]);
-  // Version check every 2 minutes
+  // Detect new deploy: check if main script changed
   useEffect(()=>{
-    const checkVersion=async()=>{try{const r=await fetch("/version.json?t="+Date.now());const d=await r.json();if(d.version&&d.version!==APP_VERSION)setUpdateAvailable(true)}catch{}};
-    checkVersion();
-    const interval=setInterval(checkVersion,120000);
+    const checkUpdate=async()=>{
+      try{
+        const r=await fetch("/",{cache:"no-store"});
+        const html=await r.text();
+        const match=html.match(/src="\/assets\/(index-[^"]+\.js)"/);
+        if(match){
+          const currentScript=document.querySelector('script[src*="assets/index-"]');
+          if(currentScript){
+            const currentFile=currentScript.src.split("/").pop();
+            if(currentFile!==match[1])setUpdateAvailable(true);
+          }
+        }
+      }catch{}
+    };
+    const interval=setInterval(checkUpdate,120000);
     return()=>clearInterval(interval);
   },[]);
 
