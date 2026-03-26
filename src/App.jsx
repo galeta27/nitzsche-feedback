@@ -382,9 +382,13 @@ ${conv.target_profile.personality||"não informado"}`;}
   // ONBOARDING RECEPTOR
   const renderOnboarding=()=>(<ProfileAssessment colors={C} Font={FONT} onCancel={()=>setOnboardStep(0)}
       onComplete={async(target)=>{
-        const title=target.name?`Feedback → ${target.name} (${target.role})`:`Feedback → ${target.role||"Colaborador"}`;
-        const conv=await saveConversation({user_id:profile.id,title,user_profile:{name:profile.full_name,age:profile.age,role:profile.role,personality:profile.personality},target_profile:{age:target.age,role:target.role,name:target.name,personality:target.personality},situation_context:target.situation||""});
-        if(conv){setConversations(p=>[conv,...p]);setActiveConvId(conv.id);setOnboardStep(0);setMessages([]);sendInitial(conv)}}}/>);
+        try{
+          const title=target.name?`Feedback → ${target.name} (${target.role})`:`Feedback → ${target.role||"Colaborador"}`;
+          const conv=await saveConversation({user_id:profile.id,title,user_profile:{name:profile.full_name,age:profile.age,role:profile.role,personality:profile.personality},target_profile:{age:target.age,role:target.role,name:target.name,personality:target.personality},situation_context:target.situation||""});
+          if(conv){setConversations(p=>[conv,...p]);setActiveConvId(conv.id);setOnboardStep(0);setMessages([]);setMsgFeedback({});sendInitial(conv)}
+          else{alert("Erro ao criar conversa. Verifique o console (F12) para mais detalhes.")}
+        }catch(e){alert("Erro: "+e.message);console.error("onComplete error:",e)}
+      }}/>);
 
   const saveFeedback=async(msgIndex,rating,tags=[],comment="")=>{
     const msg=messages[msgIndex];
