@@ -236,31 +236,26 @@ export default function NitzscheApp() {
   const [feedbackComment, setFeedbackComment] = useState("");
   const chatEndRef = useRef(null);
   const lastAiRef = useRef(null);
-  const prevMsgCount = useRef(0);
+  const chatContainerRef = useRef(null);
   const wasLoading = useRef(false);
 
   useEffect(()=>{
     if(isLoading){
-      // While loading, scroll to typing indicator
-      chatEndRef.current?.scrollIntoView({behavior:"smooth"});
+      // While loading, scroll to bottom to show typing indicator
+      if(chatContainerRef.current) chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
       wasLoading.current = true;
     } else if(wasLoading.current){
-      // Loading just finished = AI message just arrived
+      // AI just finished responding - scroll to start of its message
       wasLoading.current = false;
-      // Wait for DOM to fully render the message content
       setTimeout(()=>{
-        if(lastAiRef.current){
-          lastAiRef.current.scrollIntoView({behavior:"smooth",block:"start"});
+        if(lastAiRef.current && chatContainerRef.current){
+          const container = chatContainerRef.current;
+          const element = lastAiRef.current;
+          const elementTop = element.offsetTop - container.offsetTop;
+          container.scrollTo({top: elementTop - 12, behavior: "smooth"});
         }
-      },200);
-    } else if(messages.length > prevMsgCount.current){
-      // User sent a message
-      const lastMsg = messages[messages.length-1];
-      if(lastMsg?.role==="user"){
-        chatEndRef.current?.scrollIntoView({behavior:"smooth"});
-      }
+      },250);
     }
-    prevMsgCount.current = messages.length;
   },[messages,isLoading]);
   useEffect(()=>{if(authState==="authenticated"){loadProfile();loadGlobalSettings()}},[authState]);
   useEffect(()=>{if(profile){loadConversations();setProfileForm({full_name:profile.full_name||"",age:profile.age||"",role:profile.role||"",personality:profile.personality||""})}},[profile]);
@@ -520,7 +515,7 @@ ${conv.target_profile.personality||"não informado"}`;}
 
   // CHAT
   const renderChat=()=>{if(!activeConvId)return<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:40}}><div style={{textAlign:"center",maxWidth:380}} className="fade-in"><Logo size={56}/><h2 style={{fontFamily:FONT_DISPLAY,fontSize:24,marginTop:18,marginBottom:8}}>Feedback Training</h2><p style={{color:C.gray3,fontSize:16,lineHeight:1.6,marginBottom:24}}>Treine suas habilidades de feedback com IA.</p><Btn onClick={startNew} style={{margin:"0 auto"}}><Icon.Plus/> Novo Treinamento</Btn>{!globalApiKey&&<p style={{color:C.danger,fontSize:13,marginTop:16}}>IA não configurada. Peça ao administrador para configurar em ⚙️</p>}</div></div>;
-    return<><div style={{flex:1,overflowY:"auto",padding:"20px 24px"}}><div style={{maxWidth:700,margin:"0 auto"}}>{messages.map((msg,i)=>{const isLastAi=msg.role==="assistant"&&i===messages.length-1;return<div key={i} ref={isLastAi?lastAiRef:null} style={{display:"flex",gap:10,marginBottom:18,alignItems:"flex-start"}} className="fade-in"><div style={{width:30,height:30,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0,background:msg.role==="assistant"?`linear-gradient(135deg,${C.green},${C.greenBright})`:C.bgInput,border:msg.role==="user"?`1px solid ${C.border}`:"none",color:C.white}}>{msg.role==="assistant"?"N":(profile?.full_name?.[0]?.toUpperCase()||"U")}</div><div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",color:msg.role==="assistant"?C.green:C.gray3,marginBottom:3}}>{msg.role==="assistant"?"Nitzsche Coach":"Você"}</div><div style={{fontSize:15.5,lineHeight:1.6,color:C.gray1}}>{msg.role==="assistant"?renderMd(msg.content):<span style={{whiteSpace:"pre-wrap"}}>{msg.content}</span>}</div>
+    return<><div ref={chatContainerRef} style={{flex:1,overflowY:"auto",padding:"20px 24px"}}><div style={{maxWidth:700,margin:"0 auto"}}>{messages.map((msg,i)=>{const isLastAi=msg.role==="assistant"&&i===messages.length-1;return<div key={i} ref={isLastAi?lastAiRef:null} style={{display:"flex",gap:10,marginBottom:18,alignItems:"flex-start"}} className="fade-in"><div style={{width:30,height:30,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0,background:msg.role==="assistant"?`linear-gradient(135deg,${C.green},${C.greenBright})`:C.bgInput,border:msg.role==="user"?`1px solid ${C.border}`:"none",color:C.white}}>{msg.role==="assistant"?"N":(profile?.full_name?.[0]?.toUpperCase()||"U")}</div><div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",color:msg.role==="assistant"?C.green:C.gray3,marginBottom:3}}>{msg.role==="assistant"?"Nitzsche Coach":"Você"}</div><div style={{fontSize:15.5,lineHeight:1.6,color:C.gray1}}>{msg.role==="assistant"?renderMd(msg.content):<span style={{whiteSpace:"pre-wrap"}}>{msg.content}</span>}</div>
       {msg.role==="assistant"&&<div style={{display:"flex",gap:4,marginTop:6}}>
         <button onClick={()=>handleThumb(i,"positive")} title="Boa resposta" style={{background:"none",border:"none",cursor:msgFeedback[i]?"default":"pointer",color:msgFeedback[i]==="positive"?C.green:C.gray4,opacity:msgFeedback[i]&&msgFeedback[i]!=="positive"?0.3:1,padding:4,borderRadius:6,transition:"all 0.2s"}}><Icon.ThumbUp filled={msgFeedback[i]==="positive"}/></button>
         <button onClick={()=>handleThumb(i,"negative")} title="Pode melhorar" style={{background:"none",border:"none",cursor:msgFeedback[i]?"default":"pointer",color:msgFeedback[i]==="negative"?"#D94452":C.gray4,opacity:msgFeedback[i]&&msgFeedback[i]!=="negative"?0.3:1,padding:4,borderRadius:6,transition:"all 0.2s"}}><Icon.ThumbDown filled={msgFeedback[i]==="negative"}/></button>
