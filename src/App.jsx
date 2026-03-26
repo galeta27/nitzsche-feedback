@@ -147,6 +147,8 @@ const Icon = {
   User:()=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
   Menu:()=><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>,
   Close:()=><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+  ThumbUp:({filled})=><svg width="14" height="14" viewBox="0 0 24 24" fill={filled?"currentColor":"none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3m7-2V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14z"/></svg>,
+  ThumbDown:({filled})=><svg width="14" height="14" viewBox="0 0 24 24" fill={filled?"currentColor":"none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M17 2H20a2 2 0 012 2v7a2 2 0 01-2 2h-3m-7 2v4a3 3 0 003 3l4-9V2H6.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10z"/></svg>,
 };
 const Logo=({size=36})=><svg width={size} height={size} viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="16" fill={C.bg} stroke={C.border} strokeWidth="2"/><path d="M25 75V25h10l25 35V25h10v50H60L35 40v35z" fill={C.white}/><path d="M50 45l15 20V45h10v30H65L50 55z" fill={C.green} opacity="0.9"/></svg>;
 const Typing=()=>{const[f,setF]=useState(0);useEffect(()=>{const t=setInterval(()=>setF(v=>(v+1)%3),400);return()=>clearInterval(t)},[]);return<div style={{display:"flex",gap:5,padding:"6px 0"}}>{[0,1,2].map(i=><div key={i} style={{width:7,height:7,borderRadius:"50%",background:C.gray3,opacity:i===f?1:0.3,transform:`scale(${i===f?1.2:1})`,transition:"all 0.25s"}}/>)}</div>};
@@ -190,6 +192,10 @@ export default function NitzscheApp() {
   const [showTargetProfile, setShowTargetProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({full_name:"",age:"",role:"",personality:""});
   const [profileSaved, setProfileSaved] = useState(false);
+  const [msgFeedback, setMsgFeedback] = useState({}); // {msgIndex: "positive"|"negative"}
+  const [feedbackModal, setFeedbackModal] = useState(null); // {msgIndex, rating}
+  const [feedbackTags, setFeedbackTags] = useState([]);
+  const [feedbackComment, setFeedbackComment] = useState("");
   const chatEndRef = useRef(null);
 
   useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:"smooth"})},[messages,isLoading]);
@@ -215,7 +221,7 @@ export default function NitzscheApp() {
   const saveMessage=async(d)=>{try{await supabase.from("messages").insert(d).execute()}catch(e){console.error(e)}};
 
   const startNew=()=>{setOnboardStep(1);setActiveConvId(null);setMessages([]);setSessionTokens({input:0,output:0,cached:0,cost:0});setActionPlan(null);setActionChecks({})};
-  const resumeConv=(conv)=>{setActiveConvId(conv.id);setOnboardStep(0);setActionPlan(null);setActionChecks({})};
+  const resumeConv=(conv)=>{setActiveConvId(conv.id);setOnboardStep(0);setActionPlan(null);setActionChecks({});setMsgFeedback({})};
 
   const getSysPrompt=(convOverride)=>{
     let prompt = buildPrompt(promptText);
@@ -378,13 +384,66 @@ ${conv.target_profile.personality||"não informado"}`;}
         const conv=await saveConversation({user_id:profile.id,title,user_profile:{name:profile.full_name,age:profile.age,role:profile.role,personality:profile.personality},target_profile:{age:target.age,role:target.role,name:target.name,personality:target.personality},situation_context:target.situation||""});
         if(conv){setConversations(p=>[conv,...p]);setActiveConvId(conv.id);setOnboardStep(0);setMessages([]);sendInitial(conv)}}}/>);
 
+  const saveFeedback=async(msgIndex,rating,tags=[],comment="")=>{
+    const msg=messages[msgIndex];
+    const prevMsg=msgIndex>0?messages[msgIndex-1]:null;
+    try{await supabase.from("message_feedback").insert({
+      message_id:msg.id||null,conversation_id:activeConvId,user_id:profile.id,
+      rating,tags,comment,ai_message:msg.content,user_message:prevMsg?.content||""
+    }).execute()}catch(e){console.error("Feedback save error:",e)}
+  };
+  const handleThumb=async(msgIndex,rating)=>{
+    if(msgFeedback[msgIndex])return;
+    setMsgFeedback(p=>({...p,[msgIndex]:rating}));
+    // Salva imediatamente (positivo ou negativo)
+    await saveFeedback(msgIndex,rating);
+    // Se negativo, abre modal para coletar detalhes extras
+    if(rating==="negative"){setFeedbackModal({msgIndex,rating});setFeedbackTags([]);setFeedbackComment("")}
+  };
+  const submitNegativeFeedback=async()=>{
+    // Só salva detalhes se tem algo para adicionar
+    if(feedbackModal&&(feedbackTags.length>0||feedbackComment.trim())){
+      const msg=messages[feedbackModal.msgIndex];
+      const prevMsg=feedbackModal.msgIndex>0?messages[feedbackModal.msgIndex-1]:null;
+      try{await supabase.from("message_feedback").insert({
+        message_id:msg.id||null,conversation_id:activeConvId,user_id:profile.id,
+        rating:"negative",tags:feedbackTags,comment:feedbackComment,
+        ai_message:msg.content,user_message:prevMsg?.content||""
+      }).execute()}catch(e){console.error("Feedback detail save error:",e)}
+    }
+    setFeedbackModal(null);
+  };
+  const toggleFeedbackTag=(t)=>setFeedbackTags(p=>p.includes(t)?p.filter(x=>x!==t):[...p,t]);
+
+  const NEGATIVE_TAGS=["Resposta imprecisa","Muito longa","Não entendeu o contexto","Tom inadequado","Sugestão pouco prática","Repetitiva"];
+
+  const feedbackModalEl=feedbackModal&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={()=>{submitNegativeFeedback()}}>
+    <div style={{background:C.bgCard,borderRadius:16,padding:"24px 24px",width:"100%",maxWidth:440,border:`1px solid ${C.border}`,boxShadow:C.shadow}} onClick={e=>e.stopPropagation()}>
+      <h3 style={{fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:4}}>O que pode melhorar?</h3>
+      <p style={{fontSize:13,color:C.gray3,marginBottom:14}}>Selecione o que se aplica (opcional).</p>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
+        {NEGATIVE_TAGS.map(t=><button key={t} onClick={()=>toggleFeedbackTag(t)} style={{padding:"6px 12px",borderRadius:16,border:`1.5px solid ${feedbackTags.includes(t)?C.green:C.border}`,background:feedbackTags.includes(t)?C.bgInput:"transparent",color:feedbackTags.includes(t)?C.white:C.gray2,fontSize:13,fontFamily:FONT,cursor:"pointer",transition:"all 0.15s"}}>{t}</button>)}
+      </div>
+      <textarea value={feedbackComment} onChange={e=>setFeedbackComment(e.target.value)} placeholder="Conte mais (opcional)..." style={{width:"100%",padding:"10px 12px",borderRadius:10,border:`1px solid ${C.border}`,background:C.bgInput,color:C.white,fontSize:14,fontFamily:FONT,outline:"none",resize:"vertical",minHeight:60,lineHeight:1.5,boxSizing:"border-box"}}/>
+      <div style={{display:"flex",gap:10,marginTop:14}}>
+        <Btn onClick={submitNegativeFeedback} style={{flex:1}}>Enviar</Btn>
+        <Btn variant="ghost" onClick={()=>{submitNegativeFeedback()}} style={{border:`1px solid ${C.border}`}}>Pular</Btn>
+      </div>
+    </div>
+  </div>;
+
   // CHAT
   const renderChat=()=>{if(!activeConvId)return<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:40}}><div style={{textAlign:"center",maxWidth:380}} className="fade-in"><Logo size={56}/><h2 style={{fontFamily:FONT_DISPLAY,fontSize:24,marginTop:18,marginBottom:8}}>Feedback Training</h2><p style={{color:C.gray3,fontSize:16,lineHeight:1.6,marginBottom:24}}>Treine suas habilidades de feedback com IA.</p><Btn onClick={startNew} style={{margin:"0 auto"}}><Icon.Plus/> Novo Treinamento</Btn>{!globalApiKey&&<p style={{color:C.danger,fontSize:13,marginTop:16}}>IA não configurada. Peça ao administrador para configurar em ⚙️</p>}</div></div>;
-    return<><div style={{flex:1,overflowY:"auto",padding:"20px 24px"}}><div style={{maxWidth:700,margin:"0 auto"}}>{messages.map((msg,i)=><div key={i} style={{display:"flex",gap:10,marginBottom:18,alignItems:"flex-start"}} className="fade-in"><div style={{width:30,height:30,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0,background:msg.role==="assistant"?`linear-gradient(135deg,${C.green},${C.greenBright})`:C.bgInput,border:msg.role==="user"?`1px solid ${C.border}`:"none",color:C.white}}>{msg.role==="assistant"?"N":(profile?.full_name?.[0]?.toUpperCase()||"U")}</div><div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",color:msg.role==="assistant"?C.green:C.gray3,marginBottom:3}}>{msg.role==="assistant"?"Nitzsche Coach":"Você"}</div><div style={{fontSize:15.5,lineHeight:1.6,color:C.gray1,whiteSpace:"pre-wrap"}}>{msg.content}</div></div></div>)}{isLoading&&<div style={{display:"flex",gap:10,marginBottom:18}}><div style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:C.white}}>N</div><div><div style={{fontSize:11,fontWeight:600,color:C.green,marginBottom:3,textTransform:"uppercase"}}>Nitzsche Coach</div><Typing/></div></div>}<div ref={chatEndRef}/></div></div>
+    return<><div style={{flex:1,overflowY:"auto",padding:"20px 24px"}}><div style={{maxWidth:700,margin:"0 auto"}}>{messages.map((msg,i)=><div key={i} style={{display:"flex",gap:10,marginBottom:18,alignItems:"flex-start"}} className="fade-in"><div style={{width:30,height:30,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0,background:msg.role==="assistant"?`linear-gradient(135deg,${C.green},${C.greenBright})`:C.bgInput,border:msg.role==="user"?`1px solid ${C.border}`:"none",color:C.white}}>{msg.role==="assistant"?"N":(profile?.full_name?.[0]?.toUpperCase()||"U")}</div><div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",color:msg.role==="assistant"?C.green:C.gray3,marginBottom:3}}>{msg.role==="assistant"?"Nitzsche Coach":"Você"}</div><div style={{fontSize:15.5,lineHeight:1.6,color:C.gray1,whiteSpace:"pre-wrap"}}>{msg.content}</div>
+      {msg.role==="assistant"&&<div style={{display:"flex",gap:4,marginTop:6}}>
+        <button onClick={()=>handleThumb(i,"positive")} title="Boa resposta" style={{background:"none",border:"none",cursor:msgFeedback[i]?"default":"pointer",color:msgFeedback[i]==="positive"?C.green:C.gray4,opacity:msgFeedback[i]&&msgFeedback[i]!=="positive"?0.3:1,padding:4,borderRadius:6,transition:"all 0.2s"}}><Icon.ThumbUp filled={msgFeedback[i]==="positive"}/></button>
+        <button onClick={()=>handleThumb(i,"negative")} title="Pode melhorar" style={{background:"none",border:"none",cursor:msgFeedback[i]?"default":"pointer",color:msgFeedback[i]==="negative"?"#D94452":C.gray4,opacity:msgFeedback[i]&&msgFeedback[i]!=="negative"?0.3:1,padding:4,borderRadius:6,transition:"all 0.2s"}}><Icon.ThumbDown filled={msgFeedback[i]==="negative"}/></button>
+      </div>}
+    </div></div>)}{isLoading&&<div style={{display:"flex",gap:10,marginBottom:18}}><div style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:C.white}}>N</div><div><div style={{fontSize:11,fontWeight:600,color:C.green,marginBottom:3,textTransform:"uppercase"}}>Nitzsche Coach</div><Typing/></div></div>}<div ref={chatEndRef}/></div></div>
     <div style={{padding:"14px 24px 18px",borderTop:`1px solid ${C.border}`,background:C.bgSurface}}><div style={{maxWidth:700,margin:"0 auto"}}><div style={{display:"flex",gap:10,alignItems:"flex-end"}}><textarea value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}}} placeholder="Digite sua mensagem..." rows={1} style={{flex:1,padding:"11px 14px",borderRadius:12,border:`1px solid ${C.border}`,background:C.bgInput,color:C.white,fontSize:16,fontFamily:FONT,outline:"none",resize:"none",minHeight:42,maxHeight:150,lineHeight:1.5,boxSizing:"border-box"}}/><button onClick={sendMessage} disabled={!chatInput.trim()||isLoading} style={{width:42,height:42,borderRadius:12,border:"none",background:`linear-gradient(135deg,${C.green},${C.greenBright})`,color:C.white,cursor:chatInput.trim()&&!isLoading?"pointer":"not-allowed",display:"flex",alignItems:"center",justifyContent:"center",opacity:chatInput.trim()&&!isLoading?1:0.4,flexShrink:0}}><Icon.Send/></button></div>
     <div style={{display:"flex",gap:10,marginTop:10,alignItems:"center",flexWrap:"wrap"}}>{messages.length>=2&&<Btn small onClick={generateActionPlan} disabled={actionPlanLoading} variant="ghost" style={{border:`1px solid ${C.border}`}}>{actionPlanLoading?"Gerando...":<><Icon.Clipboard/> Gerar Plano de Ação</>}</Btn>}{actionPlan&&<Btn small onClick={()=>setShowActionPlan(true)} variant="ghost" style={{border:`1px solid ${C.green}`,color:C.green}}><Icon.Check/> Ver Plano</Btn>}{sessionTokens.input>0&&profile?.is_admin&&<span style={{fontSize:11,color:C.gray4,marginLeft:"auto"}}>{sessionTokens.input+sessionTokens.output} tokens · ${sessionTokens.cost.toFixed(4)}</span>}</div></div></div></>};
 
-  return(<div style={{display:"flex",height:"100vh",overflow:"hidden"}}><style>{cssBase}</style>{settingsModal}{promptModal}{planModal}{profileModal}{targetProfileModal}
+  return(<div style={{display:"flex",height:"100vh",overflow:"hidden"}}><style>{cssBase}</style>{settingsModal}{promptModal}{planModal}{profileModal}{targetProfileModal}{feedbackModalEl}
     {/* Mobile overlay */}
     <div className={`sidebar-overlay${sidebarOpen?" open":""}`} onClick={()=>setSidebarOpen(false)}/>
     {/* Sidebar */}
