@@ -132,6 +132,41 @@ REGRAS:
 - Gere entre 3 e 5 perguntas-chave e entre 3 e 5 dicas.
 - Responda APENAS com o JSON, nada mais.`;
 
+const renderMd=(text)=>{
+  if(!text)return null;
+  const lines=text.split("\n");
+  const elements=[];
+  let i=0;
+  while(i<lines.length){
+    const line=lines[i];
+    // Headers
+    if(line.startsWith("### ")){elements.push(<h4 key={i} style={{fontSize:15,fontWeight:700,color:"#F2F4F8",margin:"14px 0 6px"}}>{parseBold(line.slice(4))}</h4>);i++;continue}
+    if(line.startsWith("## ")){elements.push(<h3 key={i} style={{fontSize:16,fontWeight:700,color:"#F2F4F8",margin:"16px 0 6px"}}>{parseBold(line.slice(3))}</h3>);i++;continue}
+    if(line.startsWith("# ")){elements.push(<h2 key={i} style={{fontSize:17,fontWeight:700,color:"#F2F4F8",margin:"18px 0 8px"}}>{parseBold(line.slice(2))}</h2>);i++;continue}
+    // Horizontal rule
+    if(line.match(/^-{3,}$/)){elements.push(<hr key={i} style={{border:"none",borderTop:"1px solid #1A2848",margin:"12px 0"}}/>);i++;continue}
+    // Empty line
+    if(!line.trim()){elements.push(<div key={i} style={{height:8}}/>);i++;continue}
+    // Regular paragraph
+    elements.push(<p key={i} style={{margin:"0 0 6px",lineHeight:1.65}}>{parseBold(line)}</p>);
+    i++;
+  }
+  return elements;
+};
+const parseBold=(text)=>{
+  const parts=text.split(/(\*\*.*?\*\*)/g);
+  return parts.map((p,i)=>{
+    if(p.startsWith("**")&&p.endsWith("**"))return<strong key={i} style={{fontWeight:600,color:"#F2F4F8"}}>{p.slice(2,-2)}</strong>;
+    // Italic
+    const italicParts=p.split(/(\*.*?\*)/g);
+    if(italicParts.length>1)return italicParts.map((ip,j)=>{
+      if(ip.startsWith("*")&&ip.endsWith("*")&&!ip.startsWith("**"))return<em key={`${i}-${j}`}>{ip.slice(1,-1)}</em>;
+      return ip;
+    });
+    return p;
+  });
+};
+
 const Icon = {
   Send:()=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>,
   Plus:()=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
@@ -440,7 +475,7 @@ ${conv.target_profile.personality||"não informado"}`;}
 
   // CHAT
   const renderChat=()=>{if(!activeConvId)return<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:40}}><div style={{textAlign:"center",maxWidth:380}} className="fade-in"><Logo size={56}/><h2 style={{fontFamily:FONT_DISPLAY,fontSize:24,marginTop:18,marginBottom:8}}>Feedback Training</h2><p style={{color:C.gray3,fontSize:16,lineHeight:1.6,marginBottom:24}}>Treine suas habilidades de feedback com IA.</p><Btn onClick={startNew} style={{margin:"0 auto"}}><Icon.Plus/> Novo Treinamento</Btn>{!globalApiKey&&<p style={{color:C.danger,fontSize:13,marginTop:16}}>IA não configurada. Peça ao administrador para configurar em ⚙️</p>}</div></div>;
-    return<><div style={{flex:1,overflowY:"auto",padding:"20px 24px"}}><div style={{maxWidth:700,margin:"0 auto"}}>{messages.map((msg,i)=><div key={i} style={{display:"flex",gap:10,marginBottom:18,alignItems:"flex-start"}} className="fade-in"><div style={{width:30,height:30,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0,background:msg.role==="assistant"?`linear-gradient(135deg,${C.green},${C.greenBright})`:C.bgInput,border:msg.role==="user"?`1px solid ${C.border}`:"none",color:C.white}}>{msg.role==="assistant"?"N":(profile?.full_name?.[0]?.toUpperCase()||"U")}</div><div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",color:msg.role==="assistant"?C.green:C.gray3,marginBottom:3}}>{msg.role==="assistant"?"Nitzsche Coach":"Você"}</div><div style={{fontSize:15.5,lineHeight:1.6,color:C.gray1,whiteSpace:"pre-wrap"}}>{msg.content}</div>
+    return<><div style={{flex:1,overflowY:"auto",padding:"20px 24px"}}><div style={{maxWidth:700,margin:"0 auto"}}>{messages.map((msg,i)=><div key={i} style={{display:"flex",gap:10,marginBottom:18,alignItems:"flex-start"}} className="fade-in"><div style={{width:30,height:30,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0,background:msg.role==="assistant"?`linear-gradient(135deg,${C.green},${C.greenBright})`:C.bgInput,border:msg.role==="user"?`1px solid ${C.border}`:"none",color:C.white}}>{msg.role==="assistant"?"N":(profile?.full_name?.[0]?.toUpperCase()||"U")}</div><div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",color:msg.role==="assistant"?C.green:C.gray3,marginBottom:3}}>{msg.role==="assistant"?"Nitzsche Coach":"Você"}</div><div style={{fontSize:15.5,lineHeight:1.6,color:C.gray1}}>{msg.role==="assistant"?renderMd(msg.content):<span style={{whiteSpace:"pre-wrap"}}>{msg.content}</span>}</div>
       {msg.role==="assistant"&&<div style={{display:"flex",gap:4,marginTop:6}}>
         <button onClick={()=>handleThumb(i,"positive")} title="Boa resposta" style={{background:"none",border:"none",cursor:msgFeedback[i]?"default":"pointer",color:msgFeedback[i]==="positive"?C.green:C.gray4,opacity:msgFeedback[i]&&msgFeedback[i]!=="positive"?0.3:1,padding:4,borderRadius:6,transition:"all 0.2s"}}><Icon.ThumbUp filled={msgFeedback[i]==="positive"}/></button>
         <button onClick={()=>handleThumb(i,"negative")} title="Pode melhorar" style={{background:"none",border:"none",cursor:msgFeedback[i]?"default":"pointer",color:msgFeedback[i]==="negative"?"#D94452":C.gray4,opacity:msgFeedback[i]&&msgFeedback[i]!=="negative"?0.3:1,padding:4,borderRadius:6,transition:"all 0.2s"}}><Icon.ThumbDown filled={msgFeedback[i]==="negative"}/></button>
